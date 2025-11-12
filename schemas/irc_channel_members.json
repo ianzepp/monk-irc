@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "title": "IRC Channel Members",
+  "required": ["id", "channel_id", "user_id"],
+  "properties": {
+    "channel_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Reference to irc_channels.id"
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Reference to irc_users.id"
+    },
+    "nickname": {
+      "type": "string",
+      "description": "Cached nickname for fast lookups"
+    },
+    "modes": {
+      "type": "string",
+      "default": "",
+      "description": "Channel-specific modes: @, +, etc."
+    },
+    "joined_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When user joined channel"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Tracks which users are in which channels"
+}

@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "title": "IRC Messages",
+  "required": ["id", "from_user_id", "target", "message"],
+  "properties": {
+    "from_user_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Reference to irc_users.id"
+    },
+    "from_nickname": {
+      "type": "string",
+      "description": "Cached nickname for display"
+    },
+    "target": {
+      "type": "string",
+      "description": "Channel name (#channel) or nickname (privmsg)"
+    },
+    "target_type": {
+      "type": "string",
+      "enum": ["channel", "user"],
+      "description": "Message destination type"
+    },
+    "message": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "Message content"
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Message timestamp"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Message history for channels and private messages"
+}
