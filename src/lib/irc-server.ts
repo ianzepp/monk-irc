@@ -64,6 +64,9 @@ export class IrcServer {
             const { NamesCommand } = await import('../commands/names.js');
             const { TopicCommand } = await import('../commands/topic.js');
             const { ListCommand } = await import('../commands/list.js');
+            const { WhoCommand } = await import('../commands/who.js');
+            const { WhoisCommand } = await import('../commands/whois.js');
+            const { ModeCommand } = await import('../commands/mode.js');
 
             // Register commands (pass server instance for methods like registerNickname, channel management)
             this.registerCommand(new NickCommand(this.config, this));
@@ -76,6 +79,9 @@ export class IrcServer {
             this.registerCommand(new NamesCommand(this.config, this));
             this.registerCommand(new TopicCommand(this.config, this));
             this.registerCommand(new ListCommand(this.config, this));
+            this.registerCommand(new WhoCommand(this.config, this));
+            this.registerCommand(new WhoisCommand(this.config, this));
+            this.registerCommand(new ModeCommand(this.config, this));
 
             if (this.config.debug) {
                 console.log(`📋 Command handlers loaded: ${this.commandHandlers.size}`);
