@@ -8,8 +8,8 @@
     "monk-irc": "./bin/monk-irc"
   },
   "scripts": {
-    "start": "node dist/index.js",
-    "start:dev": "tsx watch src/index.ts",
+    "start": "node -r dotenv/config dist/index.js",
+    "start:dev": "tsx watch -r dotenv/config src/index.ts",
     "compile": "tsc",
     "spec": "scripts/spec.sh",
     "spec:ts": "scripts/spec-ts.sh",
@@ -25,9 +25,9 @@
   ],
   "author": "Ian Zepp",
   "license": "MIT",
-  "dependencies": {},
   "devDependencies": {
     "@types/node": "^22",
+    "dotenv": "^17.2.3",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^3.2.4"

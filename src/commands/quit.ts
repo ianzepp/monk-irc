@@ -9,7 +9,7 @@ export class QuitCommand extends BaseIrcCommand {
     readonly name = 'QUIT';
     readonly needsRegistration = false;
 
-    constructor(config: ServerConfig) {
+    constructor(config: ServerConfig, private server: any) {
         super(config);
     }
 
@@ -18,6 +18,14 @@ export class QuitCommand extends BaseIrcCommand {
 
         if (this.debug) {
             console.log(`👋 [${connection.id}] ${connection.nickname || 'Unknown'} quit: ${quitMessage}`);
+        }
+
+        // Broadcast QUIT to all channels the user is in
+        if (connection.nickname) {
+            const quitMsg = `:${this.getUserPrefix(connection)} QUIT :${quitMessage}`;
+            for (const channelName of connection.channels) {
+                this.server.broadcastToChannel(channelName, quitMsg, connection);
+            }
         }
 
         // Send ERROR message to client

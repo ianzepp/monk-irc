@@ -10,7 +10,9 @@ export class MonkApiClient {
 
         if (this.debug) {
             console.log(`🌐 API Call: ${method} ${url}`);
-            console.log(`🌐 Payload:`, JSON.stringify(payload, null, 2));
+            if (method !== 'GET') {
+                console.log(`🌐 Payload:`, JSON.stringify(payload, null, 2));
+            }
         }
 
         const headers: Record<string, string> = {
@@ -43,9 +45,12 @@ export class MonkApiClient {
 
     // User operations
     async findUserByNickname(nickname: string, jwtToken?: string): Promise<any> {
-        return this.callDataEndpoint('irc_users', 'POST', {
-            filter: { nickname }
-        }, jwtToken);
+        // For finding, we just GET all and filter in memory for simplicity
+        const result = await this.callDataEndpoint('irc_users', 'GET', {}, jwtToken);
+        if (result.data) {
+            return result.data.filter((u: any) => u.nickname === nickname);
+        }
+        return [];
     }
 
     async createUser(user: any, jwtToken?: string): Promise<any> {
@@ -60,9 +65,12 @@ export class MonkApiClient {
 
     // Channel operations
     async findChannelByName(name: string, jwtToken?: string): Promise<any> {
-        return this.callDataEndpoint('irc_channels', 'POST', {
-            filter: { name }
-        }, jwtToken);
+        // For finding, we just GET all and filter in memory for simplicity
+        const result = await this.callDataEndpoint('irc_channels', 'GET', {}, jwtToken);
+        if (result.data) {
+            return result.data.filter((c: any) => c.name === name);
+        }
+        return [];
     }
 
     async createChannel(channel: any, jwtToken?: string): Promise<any> {
@@ -73,8 +81,8 @@ export class MonkApiClient {
 
     async getOrCreateChannel(name: string, jwtToken?: string): Promise<any> {
         const existing = await this.findChannelByName(name, jwtToken);
-        if (existing && existing.data && existing.data.length > 0) {
-            return existing.data[0];
+        if (existing && existing.length > 0) {
+            return existing[0];
         }
 
         const newChannel = {
@@ -85,14 +93,17 @@ export class MonkApiClient {
         };
 
         const result = await this.createChannel(newChannel, jwtToken);
-        return result.data;
+        return result; // Already returns first record
     }
 
     // Channel membership operations
     async getChannelMembers(channelId: string, jwtToken?: string): Promise<any> {
-        return this.callDataEndpoint('irc_channel_members', 'POST', {
-            filter: { channel_id: channelId }
-        }, jwtToken);
+        // GET all and filter in memory
+        const result = await this.callDataEndpoint('irc_channel_members', 'GET', {}, jwtToken);
+        if (result.data) {
+            return result.data.filter((m: any) => m.channel_id === channelId);
+        }
+        return [];
     }
 
     async joinChannel(channelId: string, userId: string, nickname: string, jwtToken?: string): Promise<any> {
@@ -108,9 +119,17 @@ export class MonkApiClient {
     }
 
     async leaveChannel(channelId: string, userId: string, jwtToken?: string): Promise<any> {
-        return this.callDataEndpoint('irc_channel_members', 'DELETE', {
-            filter: { channel_id: channelId, user_id: userId }
-        }, jwtToken);
+        // First find the membership record
+        const members = await this.getChannelMembers(channelId, jwtToken);
+        const membership = members.find((m: any) => m.user_id === userId);
+        
+        if (membership && membership.id) {
+            // Delete by ID
+            const result = await this.callDataEndpoint(`irc_channel_members/${membership.id}`, 'DELETE', {}, jwtToken);
+            return result;
+        }
+        
+        return null;
     }
 
     // Message operations

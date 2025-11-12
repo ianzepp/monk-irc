@@ -58,12 +58,18 @@ export class IrcServer {
             const { UserCommand } = await import('../commands/user.js');
             const { PingCommand } = await import('../commands/ping.js');
             const { QuitCommand } = await import('../commands/quit.js');
+            const { JoinCommand } = await import('../commands/join.js');
+            const { PartCommand } = await import('../commands/part.js');
+            const { PrivmsgCommand } = await import('../commands/privmsg.js');
 
-            // Register commands (pass server instance for methods like registerNickname)
+            // Register commands (pass server instance for methods like registerNickname, channel management)
             this.registerCommand(new NickCommand(this.config, this));
             this.registerCommand(new UserCommand(this.config, this));
             this.registerCommand(new PingCommand(this.config));
-            this.registerCommand(new QuitCommand(this.config));
+            this.registerCommand(new QuitCommand(this.config, this));
+            this.registerCommand(new JoinCommand(this.config, this));
+            this.registerCommand(new PartCommand(this.config, this));
+            this.registerCommand(new PrivmsgCommand(this.config, this));
 
             if (this.config.debug) {
                 console.log(`📋 Command handlers loaded: ${this.commandHandlers.size}`);
@@ -90,7 +96,8 @@ export class IrcServer {
             channels: new Set(),
             modes: new Set(),
             connectedAt: new Date(),
-            lastActivity: new Date()
+            lastActivity: new Date(),
+            lineBuffer: ''
         };
 
         this.connections.set(connection.id, connection);
@@ -111,7 +118,14 @@ export class IrcServer {
     private async handleData(connection: IrcConnection, data: Buffer): Promise<void> {
         connection.lastActivity = new Date();
 
-        const lines = data.toString().split(/\r?\n/);
+        // Add to line buffer
+        connection.lineBuffer += data.toString();
+
+        // Split by CRLF or LF
+        const lines = connection.lineBuffer.split(/\r?\n/);
+
+        // Keep the last incomplete line in the buffer
+        connection.lineBuffer = lines.pop() || '';
 
         for (const line of lines) {
             if (!line.trim()) continue;
@@ -120,11 +134,11 @@ export class IrcServer {
                 console.log(`📨 [${connection.id}] ${line}`);
             }
 
-            // Parse IRC message: [prefix] command [params]
-            const parts = line.trim().split(' ');
-            const command = parts[0].toUpperCase();
-            const args = parts.slice(1).join(' ');
+            // Parse IRC message: [prefix] command [params] [:trailing]
+            const parsed = this.parseIrcMessage(line);
+            if (!parsed) continue;
 
+            const { command, args } = parsed;
             const handler = this.commandHandlers.get(command);
 
             if (!handler) {
@@ -146,9 +160,52 @@ export class IrcServer {
         }
     }
 
+    /**
+     * Parse IRC message format: [prefix] command [params] [:trailing]
+     * Returns command and args (params + trailing as one string)
+     */
+    private parseIrcMessage(line: string): { command: string; args: string } | null {
+        let message = line.trim();
+        if (!message) return null;
+
+        // Skip prefix if present (we don't need it for server-side parsing)
+        if (message.startsWith(':')) {
+            const spaceIdx = message.indexOf(' ');
+            if (spaceIdx === -1) return null;
+            message = message.substring(spaceIdx + 1).trim();
+        }
+
+        // Extract command (first word)
+        const spaceIdx = message.indexOf(' ');
+        if (spaceIdx === -1) {
+            // Command with no args
+            return { command: message.toUpperCase(), args: '' };
+        }
+
+        const command = message.substring(0, spaceIdx).toUpperCase();
+        const args = message.substring(spaceIdx + 1);
+
+        return { command, args };
+    }
+
     private handleClose(connection: IrcConnection): void {
         if (this.config.debug) {
             console.log(`📤 Connection closed: ${connection.id}`);
+        }
+
+        // Broadcast QUIT to all channels if user was registered
+        if (connection.nickname) {
+            const quitMsg = `:${connection.nickname}!${connection.username || 'unknown'}@${connection.hostname} QUIT :Connection closed`;
+            for (const channelName of connection.channels) {
+                this.broadcastToChannel(channelName, quitMsg, connection);
+            }
+        }
+
+        // Clean up database - remove from all channels
+        if (connection.userId) {
+            this.cleanupChannelMemberships(connection).catch(err => {
+                console.error(`❌ Failed to cleanup channel memberships:`, err);
+            });
         }
 
         // Remove from nickname mapping
@@ -156,7 +213,7 @@ export class IrcServer {
             this.nicknameToConnection.delete(connection.nickname);
         }
 
-        // Remove from all channels
+        // Remove from all channels in memory
         for (const channel of connection.channels) {
             const members = this.channelMembers.get(channel);
             if (members) {
@@ -166,6 +223,29 @@ export class IrcServer {
 
         // Remove connection
         this.connections.delete(connection.id);
+    }
+
+    private async cleanupChannelMemberships(connection: IrcConnection): Promise<void> {
+        const MonkApiClient = (await import('./api-client.js')).MonkApiClient;
+        const apiClient = new MonkApiClient(this.config.apiUrl, this.config.debug);
+
+        // Remove from each channel in database
+        for (const channelName of connection.channels) {
+            try {
+                // Get channel by name
+                const channels = await apiClient.findChannelByName(channelName, this.config.apiToken);
+                if (channels && channels.length > 0) {
+                    const channel = channels[0];
+                    await apiClient.leaveChannel(channel.id, connection.userId!, this.config.apiToken);
+                    
+                    if (this.config.debug) {
+                        console.log(`💾 [${connection.id}] Removed ${connection.nickname} from ${channelName} in database`);
+                    }
+                }
+            } catch (error) {
+                console.error(`❌ Failed to remove from channel ${channelName}:`, error);
+            }
+        }
     }
 
     private handleError(connection: IrcConnection, error: Error): void {

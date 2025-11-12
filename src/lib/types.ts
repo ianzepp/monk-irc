@@ -15,6 +15,9 @@ export interface IrcConnection {
     hostname: string;
     registered: boolean;
 
+    // Database user ID (from irc_users table)
+    userId?: string;
+
     // Channel membership (in-memory for routing)
     channels: Set<string>;  // #channel-name
 
@@ -24,6 +27,9 @@ export interface IrcConnection {
     // Connection metadata
     connectedAt: Date;
     lastActivity: Date;
+
+    // Line buffer for IRC protocol parsing
+    lineBuffer: string;
 }
 
 export interface IrcCommandHandler {
@@ -81,6 +87,7 @@ export const IRC_REPLIES = {
     ERR_NONICKNAMEGIVEN: '431',   // No nickname given
     ERR_ERRONEUSNICKNAME: '432',  // Erroneous nickname
     ERR_NICKNAMEINUSE: '433',     // Nickname in use
+    ERR_NOTONCHANNEL: '442',      // Not on channel
     ERR_NOTREGISTERED: '451',     // Not registered
     ERR_NEEDMOREPARAMS: '461',    // Need more params
     ERR_ALREADYREGISTERED: '462', // Already registered
