@@ -9,11 +9,13 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
     protected apiClient: MonkApiClient;
     protected debug: boolean;
     protected serverName: string;
+    protected apiToken: string;
 
     constructor(config: ServerConfig) {
         this.apiClient = new MonkApiClient(config.apiUrl, config.debug);
         this.debug = config.debug;
         this.serverName = config.serverName;
+        this.apiToken = config.apiToken;
     }
 
     abstract readonly name: string;

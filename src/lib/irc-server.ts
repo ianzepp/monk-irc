@@ -87,7 +87,6 @@ export class IrcServer {
             id: crypto.randomUUID(),
             hostname: socket.remoteAddress || 'unknown',
             registered: false,
-            authenticated: false,
             channels: new Set(),
             modes: new Set(),
             connectedAt: new Date(),

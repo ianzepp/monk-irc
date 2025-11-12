@@ -15,10 +15,6 @@ export interface IrcConnection {
     hostname: string;
     registered: boolean;
 
-    // Authentication (optional)
-    authenticated: boolean;
-    jwtToken?: string;
-
     // Channel membership (in-memory for routing)
     channels: Set<string>;  // #channel-name
 
@@ -42,6 +38,7 @@ export interface ServerConfig {
     host: string;
     serverName: string;      // irc.monk.local
     apiUrl: string;          // http://localhost:9001
+    apiToken: string;        // JWT token for API authentication (service account)
     debug: boolean;
 }
 
@@ -63,6 +60,11 @@ export const IRC_REPLIES = {
     RPL_TOPIC: '332',             // Channel topic
     RPL_NAMREPLY: '353',          // Names list
     RPL_ENDOFNAMES: '366',        // End of names
+
+    // MOTD replies
+    RPL_MOTDSTART: '375',         // Start of MOTD
+    RPL_MOTD: '372',              // MOTD line
+    RPL_ENDOFMOTD: '376',         // End of MOTD
 
     // WHOIS replies
     RPL_WHOISUSER: '311',         // User info

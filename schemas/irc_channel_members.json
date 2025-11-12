@@ -1,7 +1,7 @@
 {
   "type": "object",
   "title": "IRC Channel Members",
-  "required": ["id", "channel_id", "user_id"],
+  "required": ["channel_id", "user_id"],
   "properties": {
     "channel_id": {
       "type": "string",

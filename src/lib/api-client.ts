@@ -6,7 +6,7 @@ export class MonkApiClient {
     constructor(private baseUrl: string, private debug: boolean = false) {}
 
     async callDataEndpoint(schema: string, method: string, payload: any = {}, jwtToken?: string): Promise<any> {
-        const url = `${this.baseUrl}/data/${schema}`;
+        const url = `${this.baseUrl}/api/data/${schema}`;
 
         if (this.debug) {
             console.log(`🌐 API Call: ${method} ${url}`);
@@ -49,7 +49,9 @@ export class MonkApiClient {
     }
 
     async createUser(user: any, jwtToken?: string): Promise<any> {
-        return this.callDataEndpoint('irc_users', 'POST', user, jwtToken);
+        // API expects an array of records for POST
+        const result = await this.callDataEndpoint('irc_users', 'POST', [user], jwtToken);
+        return result.data && result.data[0]; // Return first record
     }
 
     async updateUser(id: string, updates: any, jwtToken?: string): Promise<any> {
@@ -64,7 +66,9 @@ export class MonkApiClient {
     }
 
     async createChannel(channel: any, jwtToken?: string): Promise<any> {
-        return this.callDataEndpoint('irc_channels', 'POST', channel, jwtToken);
+        // API expects an array of records for POST
+        const result = await this.callDataEndpoint('irc_channels', 'POST', [channel], jwtToken);
+        return result.data && result.data[0]; // Return first record
     }
 
     async getOrCreateChannel(name: string, jwtToken?: string): Promise<any> {
@@ -92,13 +96,15 @@ export class MonkApiClient {
     }
 
     async joinChannel(channelId: string, userId: string, nickname: string, jwtToken?: string): Promise<any> {
-        return this.callDataEndpoint('irc_channel_members', 'POST', {
+        // API expects an array of records for POST
+        const result = await this.callDataEndpoint('irc_channel_members', 'POST', [{
             channel_id: channelId,
             user_id: userId,
             nickname,
             modes: '',
             joined_at: new Date().toISOString()
-        }, jwtToken);
+        }], jwtToken);
+        return result.data && result.data[0]; // Return first record
     }
 
     async leaveChannel(channelId: string, userId: string, jwtToken?: string): Promise<any> {
@@ -109,10 +115,12 @@ export class MonkApiClient {
 
     // Message operations
     async storeMessage(message: any, jwtToken?: string): Promise<any> {
-        return this.callDataEndpoint('irc_messages', 'POST', {
+        // API expects an array of records for POST
+        const result = await this.callDataEndpoint('irc_messages', 'POST', [{
             ...message,
             sent_at: new Date().toISOString()
-        }, jwtToken);
+        }], jwtToken);
+        return result.data && result.data[0]; // Return first record
     }
 
     async getRecentMessages(target: string, limit: number = 50, jwtToken?: string): Promise<any> {

@@ -74,7 +74,7 @@ export class UserCommand extends BaseIrcCommand {
                 modes: Array.from(connection.modes).join(''),
                 registered_at: connection.connectedAt.toISOString(),
                 last_seen: connection.lastActivity.toISOString()
-            }, connection.jwtToken);
+            }, this.apiToken);
 
             if (this.debug) {
                 console.log(`💾 [${connection.id}] User ${connection.nickname} persisted to database`);

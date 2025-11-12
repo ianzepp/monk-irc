@@ -1,7 +1,7 @@
 {
   "type": "object",
   "title": "IRC Messages",
-  "required": ["id", "from_user_id", "target", "message"],
+  "required": ["from_user_id", "target", "message"],
   "properties": {
     "from_user_id": {
       "type": "string",

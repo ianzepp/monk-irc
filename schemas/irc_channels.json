@@ -1,7 +1,7 @@
 {
   "type": "object",
   "title": "IRC Channels",
-  "required": ["id", "name"],
+  "required": ["name"],
   "properties": {
     "name": {
       "type": "string",

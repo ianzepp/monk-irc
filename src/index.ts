@@ -14,8 +14,13 @@ async function createServer(): Promise<IrcServer> {
         host: process.env.IRC_HOST || 'localhost',
         serverName: process.env.IRC_SERVER_NAME || 'irc.monk.local',
         apiUrl: process.env.MONK_API_URL || 'http://localhost:9001',
+        apiToken: process.env.MONK_JWT_TOKEN || '',
         debug: process.env.NODE_ENV === 'development'
     };
+
+    if (!config.apiToken) {
+        throw new Error('MONK_JWT_TOKEN environment variable is required');
+    }
 
     return new IrcServer(config);
 }

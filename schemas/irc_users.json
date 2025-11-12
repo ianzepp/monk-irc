@@ -1,7 +1,7 @@
 {
   "type": "object",
   "title": "IRC Users",
-  "required": ["id", "nickname", "username", "realname"],
+  "required": ["nickname", "username", "realname"],
   "properties": {
     "nickname": {
       "type": "string",
