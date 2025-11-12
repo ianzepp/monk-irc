@@ -64,6 +64,11 @@ export class MonkApiClient {
     }
 
     // Channel operations
+    async getAllChannels(jwtToken?: string): Promise<any> {
+        const result = await this.callDataEndpoint('irc_channels', 'GET', {}, jwtToken);
+        return result.data || [];
+    }
+
     async findChannelByName(name: string, jwtToken?: string): Promise<any> {
         // For finding, we just GET all and filter in memory for simplicity
         const result = await this.callDataEndpoint('irc_channels', 'GET', {}, jwtToken);
@@ -77,6 +82,10 @@ export class MonkApiClient {
         // API expects an array of records for POST
         const result = await this.callDataEndpoint('irc_channels', 'POST', [channel], jwtToken);
         return result.data && result.data[0]; // Return first record
+    }
+
+    async updateChannel(id: string, updates: any, jwtToken?: string): Promise<any> {
+        return this.callDataEndpoint(`irc_channels/${id}`, 'PUT', updates, jwtToken);
     }
 
     async getOrCreateChannel(name: string, jwtToken?: string): Promise<any> {
