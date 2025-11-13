@@ -125,6 +125,14 @@ export class UserCommand extends BaseIrcCommand {
         if (this.debug) {
             console.log(`✅ [${connection.id}] Authenticated ${connection.username}@${connection.tenant}`);
         }
+
+        // Register connection with tenant
+        const tenant = this.server.getTenant(connection.tenant);
+        tenant.addConnection(connection);
+
+        if (this.debug) {
+            console.log(`🏢 [${connection.id}] Registered with tenant: ${connection.tenant}`);
+        }
     }
 
     private checkRegistration(connection: IrcConnection): void {

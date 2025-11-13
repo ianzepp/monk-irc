@@ -23,12 +23,13 @@ export class IsonCommand extends BaseIrcCommand {
             return;
         }
 
-        // Check which nicknames are online
+        // Check which nicknames are online (in same tenant)
         const onlineNicks: string[] = [];
 
         for (const nick of nicknames) {
             const targetConnection = this.server.getConnectionByNickname(nick);
-            if (targetConnection) {
+            // Only show users from same tenant (tenant isolation)
+            if (targetConnection && targetConnection.tenant === connection.tenant) {
                 onlineNicks.push(nick);
             }
         }

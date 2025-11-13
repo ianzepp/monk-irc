@@ -37,6 +37,7 @@ export class PartCommand extends BaseIrcCommand {
 
         // Broadcast PART to channel members (including self)
         this.server.broadcastToChannel(
+            connection,
             channelName,
             `:${this.getUserPrefix(connection)} PART ${channelName} :${partMessage}`
         );

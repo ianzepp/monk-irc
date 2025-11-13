@@ -41,6 +41,7 @@ export class NoticeCommand extends BaseIrcCommand {
 
             // Broadcast notice to channel (excluding sender)
             this.server.broadcastToChannel(
+                connection,
                 target,
                 `:${this.getUserPrefix(connection)} NOTICE ${target} :${message}`,
                 connection

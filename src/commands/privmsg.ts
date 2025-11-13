@@ -50,6 +50,7 @@ export class PrivmsgCommand extends BaseIrcCommand {
 
             // Broadcast message to channel (excluding sender)
             this.server.broadcastToChannel(
+                connection,
                 target,
                 `:${this.getUserPrefix(connection)} PRIVMSG ${target} :${message}`,
                 connection

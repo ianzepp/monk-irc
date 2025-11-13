@@ -15,11 +15,11 @@ export class ListCommand extends BaseIrcCommand {
     }
 
     async execute(connection: IrcConnection, args: string): Promise<void> {
-        // Pure bridge - list only currently active channels (in-memory)
-        const channels = Array.from(this.server.getActiveChannels());
+        // Pure bridge - list only currently active channels (in-memory) for this tenant
+        const channels = Array.from(this.server.getActiveChannels(connection));
 
         for (const channelName of channels) {
-            const memberCount = this.server.getChannelMembers(channelName).length;
+            const memberCount = this.server.getChannelMembers(connection, channelName).length;
             this.sendReply(connection, '322', `${channelName} ${memberCount} :Active channel`);
         }
 

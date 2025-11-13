@@ -35,6 +35,13 @@ export class WhoisCommand extends BaseIrcCommand {
             return;
         }
 
+        // Check if target is in the same tenant (tenant isolation)
+        if (targetConnection.tenant !== connection.tenant) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${nickname} :No such nick/channel`);
+            this.sendReply(connection, IRC_REPLIES.RPL_ENDOFWHOIS, `${nickname} :End of WHOIS list`);
+            return;
+        }
+
         // RPL_WHOISUSER (311): "<nick> <user> <host> * :<real name>"
         this.sendReply(
             connection,

@@ -29,7 +29,7 @@ export class WhoCommand extends BaseIrcCommand {
         // Check if it's a channel
         if (mask.startsWith('#')) {
             // WHO for channel
-            const members = this.server.getChannelMembers(mask);
+            const members = this.server.getChannelMembers(connection, mask);
             
             for (const member of members) {
                 if (member.nickname) {
@@ -50,8 +50,9 @@ export class WhoCommand extends BaseIrcCommand {
         } else {
             // WHO for specific user
             const targetConnection = this.server.getConnectionByNickname(mask);
-            
-            if (targetConnection && targetConnection.nickname) {
+
+            // Only show users from same tenant (tenant isolation)
+            if (targetConnection && targetConnection.nickname && targetConnection.tenant === connection.tenant) {
                 const flags = 'H';
                 // Find what channels they're in (optional, show first one or *)
                 const channel = targetConnection.channels.size > 0 

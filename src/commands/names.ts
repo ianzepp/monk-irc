@@ -33,7 +33,7 @@ export class NamesCommand extends BaseIrcCommand {
         }
 
         // Get channel members from in-memory state
-        const members = this.server.getChannelMembers(channelName);
+        const members = this.server.getChannelMembers(connection, channelName);
         
         if (members.length === 0) {
             // Channel doesn't exist or has no members

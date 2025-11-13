@@ -44,6 +44,12 @@ export class InviteCommand extends BaseIrcCommand {
             return;
         }
 
+        // Check if target is in the same tenant
+        if (targetConnection.tenant !== connection.tenant) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${targetNick} :No such nick`);
+            return;
+        }
+
         // Check if target is already in the channel
         if (targetConnection.channels.has(channelName)) {
             this.sendReply(connection, IRC_REPLIES.ERR_USERONCHANNEL, `${targetNick} ${channelName} :is already on channel`);

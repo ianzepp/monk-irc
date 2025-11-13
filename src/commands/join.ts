@@ -123,7 +123,7 @@ export class JoinCommand extends BaseIrcCommand {
             }
 
             // Get channel members and send names list
-            const members = this.server.getChannelMembers(channelName);
+            const members = this.server.getChannelMembers(connection, channelName);
             const memberNicks = members.map((m: IrcConnection) => m.nickname).join(' ');
 
             this.sendReply(connection, IRC_REPLIES.RPL_NAMREPLY, `= ${channelName} :${memberNicks}`);
@@ -131,6 +131,7 @@ export class JoinCommand extends BaseIrcCommand {
 
             // Broadcast JOIN to other channel members
             this.server.broadcastToChannel(
+                connection,
                 channelName,
                 `:${this.getUserPrefix(connection)} JOIN ${channelName}`,
                 connection

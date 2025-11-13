@@ -1,19 +1,21 @@
 /**
- * Core IRC Server with Command Dispatch
+ * Core IRC Server with Command Dispatch and Tenant Isolation
  *
- * Manages IRC connections and dispatches commands to individual handlers
+ * Manages IRC connections and dispatches commands to individual handlers.
+ * Provides complete tenant isolation using Tenant instances.
  */
 
 import * as net from 'net';
 import * as crypto from 'crypto';
 import type { IrcConnection, IrcCommandHandler, ServerConfig } from './types.js';
 import { IRC_REPLIES } from './types.js';
+import { Tenant } from './tenant.js';
 
 export class IrcServer {
     private server: net.Server;
     private connections = new Map<string, IrcConnection>();
     private nicknameToConnection = new Map<string, IrcConnection>();
-    private channelMembers = new Map<string, Set<IrcConnection>>();
+    private tenants = new Map<string, Tenant>();
     private commandHandlers = new Map<string, IrcCommandHandler>();
 
     constructor(private config: ServerConfig) {
@@ -220,10 +222,22 @@ export class IrcServer {
         }
 
         // Broadcast QUIT to all channels if user was registered
-        if (connection.nickname) {
+        if (connection.nickname && connection.tenant) {
+            const tenant = this.getTenant(connection.tenant);
             const quitMsg = `:${connection.nickname}!${connection.username || 'unknown'}@${connection.hostname} QUIT :Connection closed`;
+
             for (const channelName of connection.channels) {
-                this.broadcastToChannel(channelName, quitMsg, connection);
+                tenant.broadcastToChannel(channelName, quitMsg, connection);
+            }
+        }
+
+        // Remove from tenant
+        if (connection.tenant) {
+            const tenant = this.getTenant(connection.tenant);
+            tenant.removeConnection(connection);
+
+            if (this.config.debug) {
+                console.log(`🏢 [${connection.tenant}] Connection removed from tenant`);
             }
         }
 
@@ -232,14 +246,6 @@ export class IrcServer {
         // Remove from nickname mapping
         if (connection.nickname) {
             this.nicknameToConnection.delete(connection.nickname);
-        }
-
-        // Remove from all channels in memory
-        for (const channel of connection.channels) {
-            const members = this.channelMembers.get(channel);
-            if (members) {
-                members.delete(connection);
-            }
         }
 
         // Remove connection
@@ -289,45 +295,111 @@ export class IrcServer {
         return true;
     }
 
-    public broadcastToChannel(channelName: string, message: string, excludeConnection?: IrcConnection): void {
-        const members = this.channelMembers.get(channelName);
-        if (!members) return;
+    // Tenant management methods
 
-        for (const member of members) {
-            if (member !== excludeConnection) {
-                member.socket.write(`${message}\r\n`);
+    /**
+     * Get or create tenant instance
+     */
+    public getTenant(tenantName: string): Tenant {
+        if (!this.tenants.has(tenantName)) {
+            const tenant = new Tenant(tenantName);
+            this.tenants.set(tenantName, tenant);
+
+            if (this.config.debug) {
+                console.log(`🏢 Created new tenant: ${tenantName}`);
             }
         }
+
+        return this.tenants.get(tenantName)!;
+    }
+
+    /**
+     * Get tenant for a connection (requires connection to be authenticated)
+     */
+    public getTenantForConnection(connection: IrcConnection): Tenant | null {
+        if (!connection.tenant) {
+            return null;
+        }
+        return this.getTenant(connection.tenant);
+    }
+
+    /**
+     * List all active tenants
+     */
+    public getActiveTenants(): Tenant[] {
+        return Array.from(this.tenants.values());
+    }
+
+    // Channel management methods (tenant-aware)
+
+    public broadcastToChannel(
+        connection: IrcConnection,
+        channelName: string,
+        message: string,
+        excludeConnection?: IrcConnection
+    ): void {
+        const tenant = this.getTenantForConnection(connection);
+        if (!tenant) {
+            console.error('❌ Cannot broadcast: connection has no tenant');
+            return;
+        }
+
+        tenant.broadcastToChannel(channelName, message, excludeConnection);
     }
 
     public addToChannel(connection: IrcConnection, channelName: string): void {
-        if (!this.channelMembers.has(channelName)) {
-            this.channelMembers.set(channelName, new Set());
+        const tenant = this.getTenantForConnection(connection);
+        if (!tenant) {
+            console.error('❌ Cannot add to channel: connection has no tenant');
+            return;
         }
 
-        const members = this.channelMembers.get(channelName)!;
-        members.add(connection);
-        connection.channels.add(channelName);
+        tenant.addToChannel(connection, channelName);
+
+        if (this.config.debug) {
+            console.log(`📍 [${connection.tenant}] ${connection.nickname} added to ${channelName}`);
+        }
     }
 
     public removeFromChannel(connection: IrcConnection, channelName: string): void {
-        const members = this.channelMembers.get(channelName);
-        if (members) {
-            members.delete(connection);
-            if (members.size === 0) {
-                this.channelMembers.delete(channelName);
-            }
+        const tenant = this.getTenantForConnection(connection);
+        if (!tenant) {
+            console.error('❌ Cannot remove from channel: connection has no tenant');
+            return;
         }
 
-        connection.channels.delete(channelName);
+        tenant.removeFromChannel(connection, channelName);
+
+        if (this.config.debug) {
+            console.log(`📍 [${connection.tenant}] ${connection.nickname} removed from ${channelName}`);
+        }
     }
 
-    public getChannelMembers(channelName: string): IrcConnection[] {
-        const members = this.channelMembers.get(channelName);
-        return members ? Array.from(members) : [];
+    public getChannelMembers(connection: IrcConnection, channelName: string): IrcConnection[] {
+        const tenant = this.getTenantForConnection(connection);
+        if (!tenant) {
+            return [];
+        }
+
+        return tenant.getChannelMembers(channelName);
     }
 
-    public getActiveChannels(): Set<string> {
-        return new Set(this.channelMembers.keys());
+    public getActiveChannels(connection: IrcConnection): Set<string> {
+        const tenant = this.getTenantForConnection(connection);
+        if (!tenant) {
+            return new Set();
+        }
+
+        return tenant.getActiveChannels();
+    }
+
+    // Admin/monitoring methods
+
+    public getServerStats() {
+        return {
+            totalConnections: this.connections.size,
+            totalTenants: this.tenants.size,
+            tenants: this.getActiveTenants().map(t => t.getStats())
+        };
     }
 }

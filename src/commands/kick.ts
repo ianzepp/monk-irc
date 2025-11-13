@@ -74,7 +74,7 @@ export class KickCommand extends BaseIrcCommand {
 
         // Broadcast KICK message to all channel members (including kicked user before they're removed from routing)
         const kickMsg = `:${this.getUserPrefix(connection)} KICK ${channelName} ${targetNick} :${reason}`;
-        this.server.broadcastToChannel(channelName, kickMsg);
+        this.server.broadcastToChannel(connection, channelName, kickMsg);
         targetConnection.socket.write(`${kickMsg}\r\n`);
 
         if (this.debug) {
