@@ -105,11 +105,18 @@ export class UserCommand extends BaseIrcCommand {
             throw new Error(`API returned ${response.status}: ${error}`);
         }
 
-        const data = await response.json() as { jwt?: string; token?: string };
-        const jwt = data.jwt || data.token;
+        const result = await response.json() as {
+            success?: boolean;
+            data?: { jwt?: string; token?: string };
+            jwt?: string;
+            token?: string
+        };
+
+        // Handle both nested (data.token) and flat (token) response structures
+        const jwt = result.data?.token || result.data?.jwt || result.jwt || result.token;
 
         if (!jwt) {
-            throw new Error('No JWT token in API response');
+            throw new Error(`No JWT token in API response: ${JSON.stringify(result)}`);
         }
 
         // Store JWT in connection

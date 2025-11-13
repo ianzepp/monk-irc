@@ -121,4 +121,39 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
         }
     }
 
+    /**
+     * Make authenticated API request using connection's JWT
+     */
+    protected async apiRequest(connection: IrcConnection, path: string, options?: RequestInit): Promise<Response> {
+        if (!connection.apiUrl || !connection.jwt) {
+            throw new Error('Connection not authenticated');
+        }
+
+        const url = `${connection.apiUrl}${path}`;
+        const headers = {
+            'Authorization': `Bearer ${connection.jwt}`,
+            'Content-Type': 'application/json',
+            ...options?.headers
+        };
+
+        const response = await fetch(url, {
+            ...options,
+            headers
+        });
+
+        return response;
+    }
+
+    /**
+     * Extract schema name from channel name
+     * #users → users
+     * #tasks → tasks
+     */
+    protected getSchemaFromChannel(channelName: string): string | null {
+        if (!channelName.startsWith('#')) {
+            return null;
+        }
+        return channelName.substring(1);
+    }
+
 }

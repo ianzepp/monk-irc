@@ -319,19 +319,26 @@ USER alice@prod-tenant 0 prod :Carol
 - monk-irc calls /auth/login and stores JWT
 - Different users have different JWTs (isolation)
 
-### Phase 2: Channel/Schema Bridge (Core Functionality)
+### Phase 2: Channel/Schema Bridge (Core Functionality) ✅ COMPLETE
 **Goal:** Channels map to schemas, operations use user JWT
 
-- [ ] Refactor JOIN to map #channel → schema context
-- [ ] Remove channel persistence (in-memory only)
-- [ ] Update PRIVMSG to broadcast in-memory
-- [ ] Test: JOIN #users, see connected users
-- [ ] Test: Multiple users in same channel
+- [x] Refactor JOIN to map #channel → schema context
+- [x] Remove channel persistence (in-memory only)
+- [x] Update PRIVMSG to broadcast in-memory
+- [x] Test: JOIN #users, see connected users
+- [x] Test: Multiple users in same channel
 
 **Success Criteria:**
-- `JOIN #users` succeeds (no DB persistence)
-- Messages broadcast to channel members
-- Each user's operations use their own JWT
+- ✅ `JOIN #users` succeeds (no DB persistence)
+- ✅ Messages broadcast to channel members
+- ✅ Each user's operations use their own JWT
+
+**Implementation:**
+- Added `apiRequest()` helper in BaseIrcCommand for authenticated API calls
+- JOIN command queries `GET /api/data/{schema}` with user's JWT
+- Shows record count in topic on join: "Schema context: users (1 records available)"
+- Handles 403 (access denied), 404 (schema not found), and API errors gracefully
+- Multi-user testing confirmed both users can join and communicate with their own JWTs
 
 ### Phase 3: Remove Private State (Clean Up)
 **Goal:** Pure bridge, no IRC-specific schemas
@@ -491,11 +498,13 @@ PRIVMSG #users :I'm here to help!
 - ✅ Each connection has isolated JWT
 - ✅ API server selection works (dev/testing/prod)
 
-### Phase 2 Complete When:
+### Phase 2 Complete When: ✅ DONE
 - ✅ JOIN #schema succeeds without DB persistence
 - ✅ Messages broadcast to channel members
 - ✅ PART, QUIT clean up in-memory state
 - ✅ No writes to irc_* schemas
+- ✅ JOIN queries schema data with user's JWT
+- ✅ Schema info shown in channel topic
 
 ### Phase 3 Complete When:
 - ✅ All irc_* schemas deleted

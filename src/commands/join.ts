@@ -34,6 +34,42 @@ export class JoinCommand extends BaseIrcCommand {
         }
 
         try {
+            // Extract schema name from channel (#users → users)
+            const schemaName = this.getSchemaFromChannel(channelName);
+            let schemaInfo = '';
+
+            // Query schema data to verify access and get count
+            if (schemaName) {
+                try {
+                    const response = await this.apiRequest(connection, `/api/data/${schemaName}`);
+
+                    if (response.ok) {
+                        const data = await response.json() as { data?: any[] };
+                        const count = data.data?.length || 0;
+                        schemaInfo = ` (${count} records available)`;
+
+                        if (this.debug) {
+                            console.log(`📊 [${connection.id}] Schema ${schemaName} has ${count} records`);
+                        }
+                    } else if (response.status === 404) {
+                        // Schema doesn't exist - still allow join (might be created later)
+                        schemaInfo = ' (schema not found)';
+                        if (this.debug) {
+                            console.log(`⚠️  [${connection.id}] Schema ${schemaName} not found, but allowing join`);
+                        }
+                    } else if (response.status === 403) {
+                        // User doesn't have access
+                        this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                            `${channelName} :Access denied to schema '${schemaName}'`);
+                        return;
+                    }
+                } catch (error) {
+                    // API error - log but allow join (maybe API is down temporarily)
+                    console.error(`⚠️  API query failed for ${schemaName}:`, error);
+                    schemaInfo = ' (unable to query schema)';
+                }
+            }
+
             // Pure bridge - in-memory only (no database persistence)
             // Add to in-memory channel membership
             this.server.addToChannel(connection, channelName);
@@ -41,8 +77,12 @@ export class JoinCommand extends BaseIrcCommand {
             // Send JOIN message to user
             this.sendMessage(connection, `:${this.getUserPrefix(connection)} JOIN ${channelName}`);
 
-            // Send no topic (pure bridge - no persistent channel state)
-            this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
+            // Send topic with schema info
+            if (schemaInfo) {
+                this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :Schema context: ${schemaName}${schemaInfo}`);
+            } else {
+                this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
+            }
 
             // Get channel members and send names list
             const members = this.server.getChannelMembers(channelName);
@@ -59,7 +99,7 @@ export class JoinCommand extends BaseIrcCommand {
             );
 
             if (this.debug) {
-                console.log(`✅ [${connection.id}] ${connection.nickname} joined ${channelName} (in-memory only)`);
+                console.log(`✅ [${connection.id}] ${connection.nickname} joined ${channelName}${schemaInfo}`);
             }
 
         } catch (error) {
