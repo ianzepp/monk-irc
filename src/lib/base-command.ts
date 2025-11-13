@@ -91,10 +91,11 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
      */
     protected sendMotd(connection: IrcConnection): void {
         this.sendReply(connection, IRC_REPLIES.RPL_MOTDSTART, `:- ${this.serverName} Message of the day -`);
-        this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- Welcome to monk-irc!`);
+        this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- Welcome to monk-irc bridge!`);
         this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- `);
-        this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- This is an IRC protocol server backed by Monk API.`);
-        this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- All channels and messages are persisted to the database.`);
+        this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- This is a pure protocol bridge to monk-api.`);
+        this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- Authenticated as: ${connection.username}@${connection.tenant}`);
+        this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- API server: ${connection.serverName} (${connection.apiUrl})`);
         this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- `);
         this.sendReply(connection, IRC_REPLIES.RPL_MOTD, `:- Enjoy your stay!`);
         this.sendReply(connection, IRC_REPLIES.RPL_ENDOFMOTD, `:End of /MOTD command.`);

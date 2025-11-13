@@ -21,17 +21,34 @@ export class UserCommand extends BaseIrcCommand {
             return;
         }
 
-        // Parse USER command: USER <username> <tenant> <servername> :<realname>
+        // Parse USER command: USER <username@tenant> <mode> <servername> :<realname>
         const parts = args.split(' ');
         if (parts.length < 4) {
             this.sendReply(connection, IRC_REPLIES.ERR_NEEDMOREPARAMS, 'USER :Not enough parameters');
             return;
         }
 
-        const username = parts[0];        // API username
-        const tenant = parts[1];          // API tenant
+        const userTenant = parts[0];      // username@tenant
+        const mode = parts[1];            // Mode (ignored - usually 0 or *)
         const serverName = parts[2];      // API server identifier (dev/testing/prod)
         const realname = args.substring(args.indexOf(':') + 1) || 'Unknown';
+
+        // Parse username@tenant
+        const atIndex = userTenant.indexOf('@');
+        if (atIndex === -1) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NEEDMOREPARAMS,
+                'USER :Username must be in format username@tenant (e.g., root@cli-test)');
+            return;
+        }
+
+        const username = userTenant.substring(0, atIndex);
+        const tenant = userTenant.substring(atIndex + 1);
+
+        if (!username || !tenant) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NEEDMOREPARAMS,
+                'USER :Invalid username@tenant format');
+            return;
+        }
 
         // Resolve API server URL
         const apiUrl = this.config.apiServers.get(serverName || this.config.defaultServer);

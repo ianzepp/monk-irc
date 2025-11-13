@@ -45,12 +45,12 @@ USER <username> <hostname> <servername> :<realname>
 **Mapping to monk-api:**
 ```
 NICK alice
-USER root cli-test dev :Alice Smith
-     │    │         │    │
-     │    │         │    └─> Display name (IRC realname)
-     │    │         └──────> API server identifier (dev/testing/prod)
-     │    └────────────────> Tenant name
-     └─────────────────────> API username
+USER root@cli-test 0 dev :Alice Smith
+     │            │ │   │
+     │            │ │   └─────> Display name (IRC realname)
+     │            │ └─────────> API server identifier (dev/testing/prod)
+     │            └───────────> Mode (ignored, use 0 or *)
+     └────────────────────────> username@tenant format
 ```
 
 ### Authentication Flow
@@ -63,7 +63,7 @@ USER root cli-test dev :Alice Smith
       │  NICK alice           │                       │
       ├──────────────────────>│                       │
       │                       │                       │
-      │  USER root cli-test dev :Alice Smith          │
+      │  USER root@cli-test 0 dev :Alice Smith        │
       ├──────────────────────>│                       │
       │                       │                       │
       │                       │  POST /auth/login     │
@@ -202,13 +202,13 @@ connection.jwt = jwt;
 Users can connect to different API backends from the same IRC server:
 ```
 # User A connects to dev
-USER root cli-test dev :Alice
+USER root@cli-test 0 dev :Alice
 
 # User B connects to testing
-USER admin acme-corp testing :Bob
+USER admin@acme-corp 0 testing :Bob
 
 # User C connects to prod
-USER alice prod-tenant prod :Carol
+USER alice@prod-tenant 0 prod :Carol
 ```
 
 ## Command Translation
@@ -315,7 +315,7 @@ USER alice prod-tenant prod :Carol
 - [ ] Test: Connect with different tenants/users
 
 **Success Criteria:**
-- Users can connect with: `USER root cli-test dev :Alice`
+- Users can connect with: `USER root@cli-test 0 dev :Alice`
 - monk-irc calls /auth/login and stores JWT
 - Different users have different JWTs (isolation)
 
@@ -386,7 +386,7 @@ USER alice prod-tenant prod :Carol
 │             │               │                       │
 └─────────────┘               │                       │
       │                       │                       │
-      │  USER monk-bot-admin monk-bot-state dev :AI   │
+      │  USER monk-bot-admin@monk-bot-state 0 dev :AI │
       │  [Gets JWT for monk-bot-state:monk-bot-admin] │
       │  JOIN #users          │                       │
       ├──────────────────────>│                       │
@@ -439,14 +439,14 @@ npm run dev
 # Terminal 2: Connect as alice
 nc localhost 6667
 NICK alice
-USER root cli-test dev :Alice Smith
+USER root@cli-test 0 dev :Alice Smith
 JOIN #users
 PRIVMSG #users :Hello!
 
 # Terminal 3: Connect as monk-bot
 nc localhost 6667
 NICK monk-bot
-USER monk-bot-admin monk-bot-state dev :AI Assistant
+USER monk-bot-admin@monk-bot-state 0 dev :AI Assistant
 JOIN #users
 # Should see alice's message
 PRIVMSG #users :I'm here to help!
