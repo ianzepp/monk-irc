@@ -15,6 +15,7 @@ IRC Client → monk-irc (bridge) → monk-api
 - **Stateless Bridge**: No database persistence - pure in-memory protocol translation
 - **Per-User Auth**: Each IRC connection authenticates independently to monk-api
 - **Multi-Tenant**: Users specify tenant during IRC login (username@tenant format)
+- **Enterprise Isolation**: Complete tenant isolation - users from different tenants never see each other
 - **Multi-Server**: Support multiple API backends (dev/testing/prod)
 - **Schema Channels**: IRC channels map to monk-api schemas for data operations
 - **Record Channels**: Focused channels for specific records (#schema/recordId)
@@ -111,6 +112,129 @@ JOIN #users
 ```
 
 Each user operates in their own tenant with their own permissions. Alice sees cli-test data, Bob sees acme-corp data.
+
+## Enterprise Tenant Isolation
+
+monk-irc provides **complete tenant isolation** to prevent cross-tenant data leakage in enterprise multi-tenant environments. Users from different tenants never see each other's presence, messages, or data.
+
+### How Tenant Isolation Works
+
+When users from different tenants join the same channel name (e.g., `#users`), they are automatically isolated into separate tenant-scoped virtual channels:
+
+```bash
+# Terminal 1: alice@legal-firm
+NICK alice
+USER root@legal-firm 0 dev :Alice
+JOIN #users
+PRIVMSG #users :Discussing legal case data
+
+# Terminal 2: bob@construction-co
+NICK bob
+USER admin@construction-co 0 dev :Bob
+JOIN #users
+PRIVMSG #users :Discussing construction projects
+
+# Result: Alice and Bob NEVER see each other!
+# They're in separate tenant-scoped #users channels
+```
+
+### Architecture: Tenant Class
+
+Each tenant is a first-class object that encapsulates:
+- **Channel membership**: Users and channels scoped per tenant
+- **Message routing**: Broadcasts stay within tenant boundaries
+- **Connection tracking**: Monitor tenant-specific connections
+- **Statistics**: Per-tenant metrics and monitoring
+
+```typescript
+// Internal architecture (simplified)
+class Tenant {
+  name: string;
+  channelMembers: Map<string, Set<IrcConnection>>;
+  connections: Set<IrcConnection>;
+
+  broadcastToChannel(channel, message) {
+    // Only broadcasts to this tenant's members
+  }
+}
+
+// Server maintains tenant isolation
+private tenants = new Map<string, Tenant>();
+```
+
+### Isolation Guarantees
+
+**Channel Messages:**
+- ✅ Users from `tenant1` and `tenant2` in `#users` see different members
+- ✅ PRIVMSG and NOTICE stay within tenant boundaries
+- ✅ Channel topics are tenant-specific
+
+**User Queries:**
+- ✅ WHOIS only reveals users from same tenant
+- ✅ WHO filters results by tenant
+- ✅ ISON only checks users in same tenant
+- ✅ INVITE only works within same tenant
+
+**Security:**
+- ✅ No cross-tenant message leakage
+- ✅ No cross-tenant user presence disclosure
+- ✅ Each tenant's data completely isolated
+- ✅ Perfect for multi-tenant SaaS deployments
+
+### Use Cases
+
+**Enterprise SaaS:**
+```
+Legal Firm (tenant: legal-firm)
+  - alice, bob, carol in #cases
+  - Discussing confidential legal matters
+
+Construction Co (tenant: construction-co)
+  - dave, eve in #cases
+  - Discussing construction projects
+
+→ Both use #cases but never see each other
+```
+
+**Multi-Organization Deployment:**
+- Each organization gets isolated IRC environment
+- Single monk-irc server serves all organizations
+- Zero configuration needed - automatic based on `username@tenant`
+
+**monk-bot Integration:**
+Deploy one bot instance per tenant:
+```bash
+# Legal firm bot
+monk-bot@legal-firm → Only sees legal-firm users/channels
+
+# Construction co bot
+monk-bot@construction-co → Only sees construction-co users/channels
+```
+
+### Monitoring Tenant Activity
+
+Server provides tenant statistics:
+```javascript
+// GET /stats (if HTTP monitoring enabled)
+{
+  totalConnections: 10,
+  totalTenants: 3,
+  tenants: [
+    {
+      name: "legal-firm",
+      connections: 5,
+      channels: 3,
+      lastActivity: "2025-01-15T10:30:00Z"
+    },
+    {
+      name: "construction-co",
+      connections: 3,
+      channels: 2,
+      lastActivity: "2025-01-15T10:29:45Z"
+    }
+  ]
+}
+```
 
 ## Channel Types
 
@@ -405,6 +529,17 @@ monk-irc is a **pure bridge** - it translates IRC protocol to monk-api calls but
 - **Maintainable**: Protocol translation only
 - **Single Source of Truth**: All data lives in monk-api
 
+### Why Tenant Isolation?
+
+Complete tenant isolation is critical for enterprise deployments:
+
+- **Security**: Prevent cross-tenant data leakage and eavesdropping
+- **Compliance**: Meet regulatory requirements (HIPAA, SOC2, GDPR)
+- **Privacy**: Each organization's conversations remain confidential
+- **Scalability**: Single server handles hundreds of isolated tenants
+- **Simplicity**: Zero configuration - automatic based on username@tenant
+- **Trust**: Legal firm and construction company can share infrastructure safely
+
 ### Why IRC?
 
 IRC is a simple, well-defined, text-based protocol that:
@@ -479,7 +614,11 @@ PART #users/18b4f885
 - **JWT Storage**: JWTs are stored in-memory per connection, never persisted to disk
 - **No Credentials**: monk-irc never handles passwords (monk-api authentication only)
 - **Permission Enforcement**: All API operations use user's JWT, enforced by monk-api
-- **Tenant Isolation**: Users can only access their own tenant data
+- **Enterprise Tenant Isolation**: Complete isolation of channels, messages, and user queries across tenants
+  - Users from different tenants never see each other's presence
+  - Messages stay within tenant boundaries
+  - WHOIS, WHO, ISON, and INVITE are tenant-scoped
+  - Perfect for multi-tenant SaaS and enterprise deployments
 - **SSL/TLS**: Configure nginx/caddy reverse proxy for encryption (IRC doesn't have native SSL)
 
 ## Performance
@@ -516,7 +655,7 @@ Ian Zepp <ian.zepp@protonmail.com>
 
 ---
 
-**Status**: Production Ready - Full IRC bridge with 20 commands, multi-tenant auth, and record-specific channels
+**Status**: Production Ready - Full IRC bridge with 20 commands, enterprise tenant isolation, and record-specific channels
 
 **monk ecosystem:**
 - [monk-api](../monk-api) - Backend REST API with schema engine
