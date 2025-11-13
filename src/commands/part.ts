@@ -47,32 +47,10 @@ export class PartCommand extends BaseIrcCommand {
         // Remove from in-memory channel membership
         this.server.removeFromChannel(connection, channelName);
 
-        // Remove from database (need channel ID first)
-        if (connection.userId) {
-            this.removeChannelMembership(channelName, connection).catch(err => {
-                console.error(`❌ Failed to remove channel membership:`, err);
-            });
-        }
+        // Pure bridge - no database persistence
 
         if (this.debug) {
             console.log(`✅ [${connection.id}] ${connection.nickname} left ${channelName}`);
-        }
-    }
-
-    private async removeChannelMembership(channelName: string, connection: IrcConnection): Promise<void> {
-        try {
-            // Get channel first
-            const channels = await this.apiClient.findChannelByName(channelName, this.apiToken);
-            if (channels && channels.length > 0) {
-                const channel = channels[0];
-                await this.apiClient.leaveChannel(channel.id, connection.userId!, this.apiToken);
-
-                if (this.debug) {
-                    console.log(`💾 [${connection.id}] Channel membership removed for ${connection.nickname}`);
-                }
-            }
-        } catch (error) {
-            console.error(`❌ Failed to remove channel membership:`, error);
         }
     }
 }

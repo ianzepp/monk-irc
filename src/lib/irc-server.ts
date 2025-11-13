@@ -28,7 +28,7 @@ export class IrcServer {
             this.server.listen(this.config.port, this.config.host, () => {
                 console.log(`🚀 IRC server listening on ${this.config.host}:${this.config.port}`);
                 console.log(`💬 Connect with: irssi -c ${this.config.host} -p ${this.config.port}`);
-                console.log(`🔗 API endpoint: ${this.config.apiUrl}`);
+                console.log(`🔗 API servers: ${Array.from(this.config.apiServers.entries()).map(([k,v]) => `${k}=${v}`).join(', ')}`);
                 console.log(`🏷️  Server name: ${this.config.serverName}`);
                 resolve();
             });
@@ -213,12 +213,7 @@ export class IrcServer {
             }
         }
 
-        // Clean up database - remove from all channels
-        if (connection.userId) {
-            this.cleanupChannelMemberships(connection).catch(err => {
-                console.error(`❌ Failed to cleanup channel memberships:`, err);
-            });
-        }
+        // Pure bridge - no database cleanup needed (in-memory only)
 
         // Remove from nickname mapping
         if (connection.nickname) {
@@ -237,28 +232,6 @@ export class IrcServer {
         this.connections.delete(connection.id);
     }
 
-    private async cleanupChannelMemberships(connection: IrcConnection): Promise<void> {
-        const MonkApiClient = (await import('./api-client.js')).MonkApiClient;
-        const apiClient = new MonkApiClient(this.config.apiUrl, this.config.debug);
-
-        // Remove from each channel in database
-        for (const channelName of connection.channels) {
-            try {
-                // Get channel by name
-                const channels = await apiClient.findChannelByName(channelName, this.config.apiToken);
-                if (channels && channels.length > 0) {
-                    const channel = channels[0];
-                    await apiClient.leaveChannel(channel.id, connection.userId!, this.config.apiToken);
-                    
-                    if (this.config.debug) {
-                        console.log(`💾 [${connection.id}] Removed ${connection.nickname} from ${channelName} in database`);
-                    }
-                }
-            } catch (error) {
-                console.error(`❌ Failed to remove from channel ${channelName}:`, error);
-            }
-        }
-    }
 
     private handleError(connection: IrcConnection, error: Error): void {
         console.error(`❌ Connection error [${connection.id}]:`, error);
@@ -338,5 +311,9 @@ export class IrcServer {
     public getChannelMembers(channelName: string): IrcConnection[] {
         const members = this.channelMembers.get(channelName);
         return members ? Array.from(members) : [];
+    }
+
+    public getActiveChannels(): Set<string> {
+        return new Set(this.channelMembers.keys());
     }
 }

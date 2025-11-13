@@ -55,10 +55,7 @@ export class PrivmsgCommand extends BaseIrcCommand {
                 connection
             );
 
-            // Store message in database
-            this.storeMessage(target, 'channel', message, connection).catch(err => {
-                console.error(`❌ Failed to store message:`, err);
-            });
+            // Pure bridge - no message persistence
 
         } else {
             // Private message to user
@@ -75,28 +72,7 @@ export class PrivmsgCommand extends BaseIrcCommand {
                 `:${this.getUserPrefix(connection)} PRIVMSG ${target} :${message}`
             );
 
-            // Store message in database
-            this.storeMessage(target, 'user', message, connection).catch(err => {
-                console.error(`❌ Failed to store message:`, err);
-            });
-        }
-    }
-
-    private async storeMessage(target: string, targetType: string, message: string, connection: IrcConnection): Promise<void> {
-        try {
-            await this.apiClient.storeMessage({
-                from_user_id: connection.userId || 'unknown',
-                from_nickname: connection.nickname!,
-                target,
-                target_type: targetType,
-                message
-            }, this.apiToken);
-
-            if (this.debug) {
-                console.log(`💾 [${connection.id}] Message stored: ${target} (user_id: ${connection.userId || 'unknown'})`);
-            }
-        } catch (error) {
-            console.error(`❌ Failed to store message:`, error);
+            // Pure bridge - no message persistence
         }
     }
 }

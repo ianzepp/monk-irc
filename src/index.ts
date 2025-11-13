@@ -9,18 +9,26 @@ import { IrcServer } from './lib/irc-server.js';
 import type { ServerConfig } from './lib/types.js';
 
 async function createServer(): Promise<IrcServer> {
+    // Build API servers map from environment variables
+    const apiServers = new Map<string, string>();
+
+    // Load API server configurations
+    apiServers.set('dev', process.env.API_SERVER_DEV || 'http://localhost:9001');
+    if (process.env.API_SERVER_TESTING) {
+        apiServers.set('testing', process.env.API_SERVER_TESTING);
+    }
+    if (process.env.API_SERVER_PROD) {
+        apiServers.set('prod', process.env.API_SERVER_PROD);
+    }
+
     const config: ServerConfig = {
         port: parseInt(process.env.IRC_PORT || '6667'),
         host: process.env.IRC_HOST || 'localhost',
         serverName: process.env.IRC_SERVER_NAME || 'irc.monk.local',
-        apiUrl: process.env.MONK_API_URL || 'http://localhost:9001',
-        apiToken: process.env.MONK_JWT_TOKEN || '',
+        apiServers,
+        defaultServer: process.env.API_SERVER_DEFAULT || 'dev',
         debug: process.env.NODE_ENV === 'development'
     };
-
-    if (!config.apiToken) {
-        throw new Error('MONK_JWT_TOKEN environment variable is required');
-    }
 
     return new IrcServer(config);
 }

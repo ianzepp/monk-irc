@@ -34,25 +34,15 @@ export class JoinCommand extends BaseIrcCommand {
         }
 
         try {
-            // Get or create channel in database
-            const channel = await this.apiClient.getOrCreateChannel(channelName, this.apiToken);
-
-            if (this.debug) {
-                console.log(`💾 [${connection.id}] Channel ${channelName} retrieved/created: ${channel.id}`);
-            }
-
+            // Pure bridge - in-memory only (no database persistence)
             // Add to in-memory channel membership
             this.server.addToChannel(connection, channelName);
 
             // Send JOIN message to user
             this.sendMessage(connection, `:${this.getUserPrefix(connection)} JOIN ${channelName}`);
 
-            // Send topic if exists
-            if (channel.topic) {
-                this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :${channel.topic}`);
-            } else {
-                this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
-            }
+            // Send no topic (pure bridge - no persistent channel state)
+            this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
 
             // Get channel members and send names list
             const members = this.server.getChannelMembers(channelName);
@@ -68,37 +58,13 @@ export class JoinCommand extends BaseIrcCommand {
                 connection
             );
 
-            // Persist channel membership to database
-            if (connection.userId) {
-                this.persistChannelMembership(channel.id, connection).catch(err => {
-                    console.error(`❌ Failed to persist channel membership:`, err);
-                });
-            }
-
             if (this.debug) {
-                console.log(`✅ [${connection.id}] ${connection.nickname} joined ${channelName}`);
+                console.log(`✅ [${connection.id}] ${connection.nickname} joined ${channelName} (in-memory only)`);
             }
 
         } catch (error) {
             console.error(`❌ Failed to join channel ${channelName}:`, error);
             this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL, `${channelName} :Cannot join channel`);
-        }
-    }
-
-    private async persistChannelMembership(channelId: string, connection: IrcConnection): Promise<void> {
-        try {
-            await this.apiClient.joinChannel(
-                channelId,
-                connection.userId!,
-                connection.nickname!,
-                this.apiToken
-            );
-
-            if (this.debug) {
-                console.log(`💾 [${connection.id}] Channel membership persisted for ${connection.nickname}`);
-            }
-        } catch (error) {
-            console.error(`❌ Failed to persist channel membership:`, error);
         }
     }
 }

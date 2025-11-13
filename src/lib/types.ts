@@ -8,15 +8,18 @@ export interface IrcConnection {
     socket: net.Socket;
     id: string;
 
-    // Registration state
+    // IRC Identity
     nickname?: string;
-    username?: string;
+    username?: string;        // API username
     realname?: string;
     hostname: string;
     registered: boolean;
 
-    // Database user ID (from irc_users table)
-    userId?: string;
+    // monk-api Authentication (per-user)
+    tenant?: string;          // API tenant name
+    serverName?: string;      // API server identifier (dev/testing/prod)
+    apiUrl?: string;          // Resolved API URL
+    jwt?: string;             // JWT from POST /auth/login
 
     // Channel membership (in-memory for routing)
     channels: Set<string>;  // #channel-name
@@ -43,8 +46,8 @@ export interface ServerConfig {
     port: number;
     host: string;
     serverName: string;      // irc.monk.local
-    apiUrl: string;          // http://localhost:9001
-    apiToken: string;        // JWT token for API authentication (service account)
+    apiServers: Map<string, string>;  // serverName → API URL mapping
+    defaultServer: string;   // Default API server identifier
     debug: boolean;
 }
 

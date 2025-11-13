@@ -4,19 +4,16 @@
 
 import type { IrcConnection, IrcCommandHandler, ServerConfig } from './types.js';
 import { IRC_REPLIES } from './types.js';
-import { MonkApiClient } from './api-client.js';
 
 export abstract class BaseIrcCommand implements IrcCommandHandler {
-    protected apiClient: MonkApiClient;
     protected debug: boolean;
     protected serverName: string;
-    protected apiToken: string;
+    protected config: ServerConfig;
 
     constructor(config: ServerConfig) {
-        this.apiClient = new MonkApiClient(config.apiUrl, config.debug);
+        this.config = config;
         this.debug = config.debug;
         this.serverName = config.serverName;
-        this.apiToken = config.apiToken;
     }
 
     abstract readonly name: string;
@@ -111,71 +108,16 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
 
         // Send welcome messages (001-004)
         this.sendReply(connection, IRC_REPLIES.RPL_WELCOME, `:Welcome to the IRC Network ${this.getUserPrefix(connection)}`);
-        this.sendReply(connection, IRC_REPLIES.RPL_YOURHOST, `:Your host is ${this.serverName}, running monk-irc`);
-        this.sendReply(connection, IRC_REPLIES.RPL_CREATED, `:This server was created recently`);
-        this.sendReply(connection, IRC_REPLIES.RPL_MYINFO, `${this.serverName} monk-irc-0.1.0 o o`);
+        this.sendReply(connection, IRC_REPLIES.RPL_YOURHOST, `:Your host is ${this.serverName}, running monk-irc bridge`);
+        this.sendReply(connection, IRC_REPLIES.RPL_CREATED, `:This server is a bridge to monk-api`);
+        this.sendReply(connection, IRC_REPLIES.RPL_MYINFO, `${this.serverName} monk-irc-bridge-2.0.0 o o`);
 
         // Send MOTD
         this.sendMotd(connection);
 
         if (this.debug) {
-            console.log(`✅ [${connection.id}] Registration complete for ${connection.nickname}`);
-        }
-
-        // Persist user to database
-        await this.persistUser(connection);
-    }
-
-    /**
-     * Persist user registration to database
-     * Checks if user exists first and updates, or creates new user
-     */
-    protected async persistUser(connection: IrcConnection): Promise<void> {
-        try {
-            // Check if user with this nickname already exists
-            const existingUsers = await this.apiClient.findUserByNickname(connection.nickname!, this.apiToken);
-            
-            if (existingUsers && existingUsers.length > 0) {
-                // User exists - update their last_seen and other info
-                const existingUser = existingUsers[0];
-                connection.userId = existingUser.id;
-                
-                await this.apiClient.updateUser(existingUser.id, {
-                    username: connection.username!,
-                    realname: connection.realname || 'Unknown',
-                    hostname: connection.hostname,
-                    modes: Array.from(connection.modes).join(''),
-                    last_seen: connection.lastActivity.toISOString()
-                }, this.apiToken);
-                
-                if (this.debug) {
-                    console.log(`💾 [${connection.id}] User ${connection.nickname} updated (ID: ${existingUser.id})`);
-                }
-            } else {
-                // User doesn't exist - create new
-                const userData = {
-                    nickname: connection.nickname!,
-                    username: connection.username!,
-                    realname: connection.realname || 'Unknown',
-                    hostname: connection.hostname,
-                    modes: Array.from(connection.modes).join(''),
-                    registered_at: connection.connectedAt.toISOString(),
-                    last_seen: connection.lastActivity.toISOString()
-                };
-
-                const result = await this.apiClient.createUser(userData, this.apiToken);
-                
-                // Store the user ID from the API response
-                if (result && result.id) {
-                    connection.userId = result.id;
-                    
-                    if (this.debug) {
-                        console.log(`💾 [${connection.id}] User ${connection.nickname} created (ID: ${result.id})`);
-                    }
-                }
-            }
-        } catch (error) {
-            console.error(`❌ Failed to persist user:`, error);
+            console.log(`✅ [${connection.id}] Registration complete for ${connection.nickname} (${connection.username}@${connection.tenant})`);
         }
     }
+
 }
