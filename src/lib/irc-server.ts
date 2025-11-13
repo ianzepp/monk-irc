@@ -61,12 +61,19 @@ export class IrcServer {
             const { JoinCommand } = await import('../commands/join.js');
             const { PartCommand } = await import('../commands/part.js');
             const { PrivmsgCommand } = await import('../commands/privmsg.js');
+            const { NoticeCommand } = await import('../commands/notice.js');
             const { NamesCommand } = await import('../commands/names.js');
             const { TopicCommand } = await import('../commands/topic.js');
             const { ListCommand } = await import('../commands/list.js');
             const { WhoCommand } = await import('../commands/who.js');
             const { WhoisCommand } = await import('../commands/whois.js');
             const { ModeCommand } = await import('../commands/mode.js');
+            const { KickCommand } = await import('../commands/kick.js');
+            const { InviteCommand } = await import('../commands/invite.js');
+            const { AwayCommand } = await import('../commands/away.js');
+            const { IsonCommand } = await import('../commands/ison.js');
+            const { VersionCommand } = await import('../commands/version.js');
+            const { MotdCommand } = await import('../commands/motd.js');
 
             // Register commands (pass server instance for methods like registerNickname, channel management)
             this.registerCommand(new NickCommand(this.config, this));
@@ -76,12 +83,19 @@ export class IrcServer {
             this.registerCommand(new JoinCommand(this.config, this));
             this.registerCommand(new PartCommand(this.config, this));
             this.registerCommand(new PrivmsgCommand(this.config, this));
+            this.registerCommand(new NoticeCommand(this.config, this));
             this.registerCommand(new NamesCommand(this.config, this));
             this.registerCommand(new TopicCommand(this.config, this));
             this.registerCommand(new ListCommand(this.config, this));
             this.registerCommand(new WhoCommand(this.config, this));
             this.registerCommand(new WhoisCommand(this.config, this));
             this.registerCommand(new ModeCommand(this.config, this));
+            this.registerCommand(new KickCommand(this.config, this));
+            this.registerCommand(new InviteCommand(this.config, this));
+            this.registerCommand(new AwayCommand(this.config));
+            this.registerCommand(new IsonCommand(this.config, this));
+            this.registerCommand(new VersionCommand(this.config));
+            this.registerCommand(new MotdCommand(this.config));
 
             if (this.config.debug) {
                 console.log(`📋 Command handlers loaded: ${this.commandHandlers.size}`);

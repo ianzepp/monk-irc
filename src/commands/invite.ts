@@ -1,0 +1,67 @@
+/**
+ * INVITE command handler - Invite user to join a channel
+ */
+
+import { BaseIrcCommand } from '../lib/base-command.js';
+import type { IrcConnection, ServerConfig } from '../lib/types.js';
+import { IRC_REPLIES } from '../lib/types.js';
+
+export class InviteCommand extends BaseIrcCommand {
+    readonly name = 'INVITE';
+    readonly needsRegistration = true;
+
+    constructor(config: ServerConfig, private server: any) {
+        super(config);
+    }
+
+    async execute(connection: IrcConnection, args: string): Promise<void> {
+        // Parse: INVITE <nickname> <channel>
+        const parts = args.trim().split(' ');
+        if (parts.length < 2) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NEEDMOREPARAMS, 'INVITE :Not enough parameters');
+            return;
+        }
+
+        const targetNick = parts[0];
+        const channelName = parts[1];
+
+        // Validate channel name
+        if (!this.isValidChannelName(channelName)) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL, `${channelName} :No such channel`);
+            return;
+        }
+
+        // Check if inviter is in the channel
+        if (!connection.channels.has(channelName)) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
+            return;
+        }
+
+        // Find target user
+        const targetConnection = this.server.getConnectionByNickname(targetNick);
+        if (!targetConnection) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${targetNick} :No such nick`);
+            return;
+        }
+
+        // Check if target is already in the channel
+        if (targetConnection.channels.has(channelName)) {
+            this.sendReply(connection, IRC_REPLIES.ERR_USERONCHANNEL, `${targetNick} ${channelName} :is already on channel`);
+            return;
+        }
+
+        // Send invite to target
+        targetConnection.socket.write(`:${this.getUserPrefix(connection)} INVITE ${targetNick} ${channelName}\r\n`);
+
+        // Confirm to inviter (RPL_INVITING)
+        this.sendReply(connection, '341', `${targetNick} ${channelName}`);
+
+        // Notify channel (optional - some servers do this)
+        const schemaName = this.getSchemaFromChannel(channelName);
+        const schemaInfo = schemaName ? ` (schema: ${schemaName})` : '';
+
+        if (this.debug) {
+            console.log(`💌 [${connection.id}] ${connection.nickname} invited ${targetNick} to ${channelName}${schemaInfo}`);
+        }
+    }
+}

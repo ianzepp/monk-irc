@@ -68,6 +68,15 @@ export class WhoisCommand extends BaseIrcCommand {
             `${targetConnection.nickname} ${idleSeconds} ${Math.floor(targetConnection.connectedAt.getTime() / 1000)} :seconds idle, signon time`
         );
 
+        // RPL_AWAY (301): "<nick> :<away message>" - show if user is away
+        if (targetConnection.awayMessage) {
+            this.sendReply(
+                connection,
+                IRC_REPLIES.RPL_AWAY,
+                `${targetConnection.nickname} :${targetConnection.awayMessage}`
+            );
+        }
+
         // RPL_ENDOFWHOIS (318): "<nick> :End of WHOIS list"
         this.sendReply(connection, IRC_REPLIES.RPL_ENDOFWHOIS, `${nickname} :End of WHOIS list`);
 

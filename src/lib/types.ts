@@ -27,6 +27,9 @@ export interface IrcConnection {
     // User modes
     modes: Set<string>;     // +i, +w, etc.
 
+    // User status
+    awayMessage?: string;   // Away message (undefined if not away)
+
     // Connection metadata
     connectedAt: Date;
     lastActivity: Date;
@@ -79,6 +82,17 @@ export const IRC_REPLIES = {
     RPL_WHOISUSER: '311',         // User info
     RPL_ENDOFWHOIS: '318',        // End of WHOIS
 
+    // AWAY replies
+    RPL_AWAY: '301',              // User is away
+    RPL_UNAWAY: '305',            // You are no longer marked as away
+    RPL_NOWAWAY: '306',           // You are now marked as away
+
+    // ISON reply
+    RPL_ISON: '303',              // ISON reply
+
+    // VERSION reply
+    RPL_VERSION: '351',           // Server version
+
     // Errors
     ERR_NOSUCHNICK: '401',        // No such nick/channel
     ERR_NOSUCHCHANNEL: '403',     // No such channel
@@ -90,8 +104,11 @@ export const IRC_REPLIES = {
     ERR_NONICKNAMEGIVEN: '431',   // No nickname given
     ERR_ERRONEUSNICKNAME: '432',  // Erroneous nickname
     ERR_NICKNAMEINUSE: '433',     // Nickname in use
+    ERR_USERNOTINCHANNEL: '441',  // User not in channel
     ERR_NOTONCHANNEL: '442',      // Not on channel
+    ERR_USERONCHANNEL: '443',     // User already on channel
     ERR_NOTREGISTERED: '451',     // Not registered
     ERR_NEEDMOREPARAMS: '461',    // Need more params
     ERR_ALREADYREGISTERED: '462', // Already registered
+    ERR_CHANOPRIVSNEEDED: '482',  // Channel operator privileges needed
 } as const;
