@@ -34,39 +34,72 @@ export class JoinCommand extends BaseIrcCommand {
         }
 
         try {
-            // Extract schema name from channel (#users → users)
-            const schemaName = this.getSchemaFromChannel(channelName);
+            // Parse channel name: #users or #users/217e9dcc
+            const parsed = this.parseChannelName(channelName);
             let schemaInfo = '';
 
-            // Query schema data to verify access and get count
-            if (schemaName) {
+            // Query schema or specific record data to verify access
+            if (parsed) {
+                const { schema, recordId } = parsed;
+
                 try {
-                    const response = await this.apiRequest(connection, `/api/data/${schemaName}`);
+                    if (recordId) {
+                        // Record-specific channel: GET /api/data/{schema}/{recordId}
+                        const response = await this.apiRequest(connection, `/api/data/${schema}/${recordId}`);
 
-                    if (response.ok) {
-                        const data = await response.json() as { data?: any[] };
-                        const count = data.data?.length || 0;
-                        schemaInfo = ` (${count} records available)`;
+                        if (response.ok) {
+                            const result = await response.json() as { data?: any };
+                            const record = result.data;
 
-                        if (this.debug) {
-                            console.log(`📊 [${connection.id}] Schema ${schemaName} has ${count} records`);
+                            if (record) {
+                                // Show record identifier (could be name, title, username, etc.)
+                                const recordLabel = record.name || record.title || record.username || recordId;
+                                schemaInfo = ` (record: ${recordLabel})`;
+
+                                if (this.debug) {
+                                    console.log(`📄 [${connection.id}] Record ${schema}/${recordId} found: ${recordLabel}`);
+                                }
+                            } else {
+                                schemaInfo = ` (record: ${recordId})`;
+                            }
+                        } else if (response.status === 404) {
+                            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                                `${channelName} :Record not found in schema '${schema}'`);
+                            return;
+                        } else if (response.status === 403) {
+                            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                                `${channelName} :Access denied to record '${recordId}' in schema '${schema}'`);
+                            return;
                         }
-                    } else if (response.status === 404) {
-                        // Schema doesn't exist - still allow join (might be created later)
-                        schemaInfo = ' (schema not found)';
-                        if (this.debug) {
-                            console.log(`⚠️  [${connection.id}] Schema ${schemaName} not found, but allowing join`);
+                    } else {
+                        // Schema-level channel: GET /api/data/{schema}
+                        const response = await this.apiRequest(connection, `/api/data/${schema}`);
+
+                        if (response.ok) {
+                            const data = await response.json() as { data?: any[] };
+                            const count = data.data?.length || 0;
+                            schemaInfo = ` (${count} records available)`;
+
+                            if (this.debug) {
+                                console.log(`📊 [${connection.id}] Schema ${schema} has ${count} records`);
+                            }
+                        } else if (response.status === 404) {
+                            // Schema doesn't exist - still allow join (might be created later)
+                            schemaInfo = ' (schema not found)';
+                            if (this.debug) {
+                                console.log(`⚠️  [${connection.id}] Schema ${schema} not found, but allowing join`);
+                            }
+                        } else if (response.status === 403) {
+                            // User doesn't have access
+                            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                                `${channelName} :Access denied to schema '${schema}'`);
+                            return;
                         }
-                    } else if (response.status === 403) {
-                        // User doesn't have access
-                        this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
-                            `${channelName} :Access denied to schema '${schemaName}'`);
-                        return;
                     }
                 } catch (error) {
                     // API error - log but allow join (maybe API is down temporarily)
-                    console.error(`⚠️  API query failed for ${schemaName}:`, error);
-                    schemaInfo = ' (unable to query schema)';
+                    console.error(`⚠️  API query failed for ${channelName}:`, error);
+                    schemaInfo = ' (unable to query data)';
                 }
             }
 
@@ -77,9 +110,14 @@ export class JoinCommand extends BaseIrcCommand {
             // Send JOIN message to user
             this.sendMessage(connection, `:${this.getUserPrefix(connection)} JOIN ${channelName}`);
 
-            // Send topic with schema info
-            if (schemaInfo) {
-                this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :Schema context: ${schemaName}${schemaInfo}`);
+            // Send topic with schema/record info
+            if (schemaInfo && parsed) {
+                const { schema, recordId } = parsed;
+                if (recordId) {
+                    this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :Record context: ${schema}/${recordId}${schemaInfo}`);
+                } else {
+                    this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :Schema context: ${schema}${schemaInfo}`);
+                }
             } else {
                 this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
             }

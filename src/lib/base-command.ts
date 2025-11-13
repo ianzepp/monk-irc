@@ -71,9 +71,10 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
     /**
      * Validate channel name format (RFC 2812)
      * Must start with # and contain valid characters
+     * Supports both #schema and #schema/recordId formats
      */
     protected isValidChannelName(channel: string): boolean {
-        if (!channel || channel.length < 2 || channel.length > 50) {
+        if (!channel || channel.length < 2 || channel.length > 100) {
             return false;
         }
 
@@ -81,8 +82,9 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
             return false;
         }
 
-        // Channel names can contain letters, digits, hyphens, underscores
-        const validChars = /^#[a-zA-Z0-9_\-]+$/;
+        // Channel names can contain letters, digits, hyphens, underscores, and forward slash for record ID
+        // Format: #schema or #schema/recordId
+        const validChars = /^#[a-zA-Z0-9_\-]+(\/[a-zA-Z0-9_\-]+)?$/;
         return validChars.test(channel);
     }
 
@@ -148,12 +150,43 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
      * Extract schema name from channel name
      * #users → users
      * #tasks → tasks
+     * #users/217e9dcc → users
      */
     protected getSchemaFromChannel(channelName: string): string | null {
         if (!channelName.startsWith('#')) {
             return null;
         }
-        return channelName.substring(1);
+        const withoutHash = channelName.substring(1);
+        const slashIndex = withoutHash.indexOf('/');
+        if (slashIndex > -1) {
+            return withoutHash.substring(0, slashIndex);
+        }
+        return withoutHash;
+    }
+
+    /**
+     * Parse channel name to extract schema and optional record ID
+     * #users → { schema: 'users', recordId: null }
+     * #users/217e9dcc → { schema: 'users', recordId: '217e9dcc' }
+     */
+    protected parseChannelName(channelName: string): { schema: string; recordId: string | null } | null {
+        if (!channelName.startsWith('#')) {
+            return null;
+        }
+        const withoutHash = channelName.substring(1);
+        const slashIndex = withoutHash.indexOf('/');
+
+        if (slashIndex > -1) {
+            return {
+                schema: withoutHash.substring(0, slashIndex),
+                recordId: withoutHash.substring(slashIndex + 1)
+            };
+        }
+
+        return {
+            schema: withoutHash,
+            recordId: null
+        };
     }
 
 }
