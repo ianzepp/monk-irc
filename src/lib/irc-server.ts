@@ -125,7 +125,10 @@ export class IrcServer {
             modes: new Set(),
             connectedAt: new Date(),
             lastActivity: new Date(),
-            lineBuffer: ''
+            lineBuffer: '',
+            capNegotiating: false,
+            capabilities: new Set(),
+            isBotService: false
         };
 
         this.connections.set(connection.id, connection);

@@ -36,6 +36,11 @@ export interface IrcConnection {
 
     // Line buffer for IRC protocol parsing
     lineBuffer: string;
+
+    // CAP Negotiation (IRCv3)
+    capNegotiating: boolean;           // true during CAP negotiation, blocks registration
+    capabilities: Set<string>;         // enabled capabilities (e.g., 'monk-bot-service')
+    isBotService: boolean;             // true if monk-bot-service capability enabled
 }
 
 export interface IrcCommandHandler {
@@ -92,6 +97,11 @@ export const IRC_REPLIES = {
 
     // VERSION reply
     RPL_VERSION: '351',           // Server version
+
+    // Bot service commands (custom, not standard IRC numerics)
+    TENANTS: 'TENANTS',           // Initial tenant list for bot service
+    TENANTJOIN: 'TENANTJOIN',     // New tenant connected (first user)
+    TENANTPART: 'TENANTPART',     // Tenant disconnected (last user)
 
     // Errors
     ERR_NOSUCHNICK: '401',        // No such nick/channel
