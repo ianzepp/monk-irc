@@ -89,6 +89,8 @@ export class IrcServer {
             const { RehashCommand } = await import('../commands/rehash.js');
             const { WallopsCommand } = await import('../commands/wallops.js');
             const { LinksCommand } = await import('../commands/links.js');
+            const { ForcejoinCommand } = await import('../commands/forcejoin.js');
+            const { ForcepartCommand } = await import('../commands/forcepart.js');
 
             // Register commands (pass server instance for methods like registerNickname, channel management)
             this.registerCommand(new CapCommand(this.config, this));
@@ -123,6 +125,8 @@ export class IrcServer {
             this.registerCommand(new RehashCommand(this.config));
             this.registerCommand(new WallopsCommand(this.config, this));
             this.registerCommand(new LinksCommand(this.config));
+            this.registerCommand(new ForcejoinCommand(this.config, this));
+            this.registerCommand(new ForcepartCommand(this.config, this));
 
             if (this.config.debug) {
                 console.log(`📋 Command handlers loaded: ${this.commandHandlers.size}`);

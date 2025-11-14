@@ -28,7 +28,9 @@ export class CapCommand extends BaseIrcCommand {
         'server-time',
         'away-notify',
         'extended-join',
-        'invite-notify'
+        'invite-notify',
+        'force-join',  // Allows authorized users to force-join you into channels
+        'force-part'   // Allows authorized users to force-part you from channels (polite kick)
     ]);
 
     constructor(config: ServerConfig, private server: any) {
