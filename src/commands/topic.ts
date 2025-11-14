@@ -24,8 +24,22 @@ export class TopicCommand extends BaseIrcCommand {
             return;
         }
 
+        // Get tenant and user
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const user = tenant.getUserByConnection(connection);
+        if (!user) return;
+
+        // Get channel
+        const channel = tenant.getChannel(channelName);
+        if (!channel) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
+            return;
+        }
+
         // Check if user is in channel
-        if (!connection.channels.has(channelName)) {
+        if (!channel.hasMember(user)) {
             this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
             return;
         }
@@ -35,25 +49,20 @@ export class TopicCommand extends BaseIrcCommand {
 
         if (colonIndex === -1) {
             // GET topic
-            await this.getTopic(connection, channelName);
+            await this.getTopic(connection, channel);
         } else {
             // SET topic
             const newTopic = args.substring(colonIndex + 1);
-            await this.setTopic(connection, channelName, newTopic);
+            await this.setTopic(connection, user, channel, newTopic);
         }
     }
 
     /**
      * Get channel topic (in-memory)
      */
-    private async getTopic(connection: IrcConnection, channelName: string): Promise<void> {
-        const tenant = this.server.getTenantForConnection(connection);
-        if (!tenant) {
-            this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
-            return;
-        }
-
-        const topic = tenant.getChannelTopic(channelName);
+    private async getTopic(connection: IrcConnection, channel: any): Promise<void> {
+        const topic = channel.getTopic();
+        const channelName = channel.getName();
 
         if (topic) {
             this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :${topic}`);
@@ -65,28 +74,31 @@ export class TopicCommand extends BaseIrcCommand {
     /**
      * Set channel topic (in-memory only, not persisted to API)
      */
-    private async setTopic(connection: IrcConnection, channelName: string, newTopic: string): Promise<void> {
-        const tenant = this.server.getTenantForConnection(connection);
-        if (!tenant) {
+    private async setTopic(connection: IrcConnection, user: any, channel: any, newTopic: string): Promise<void> {
+        const channelName = channel.getName();
+
+        // Check if user has permission to set topic
+        if (!channel.canSetTopic(user)) {
+            this.sendReply(connection, IRC_REPLIES.ERR_CHANOPRIVSNEEDED,
+                `${channelName} :You're not a channel operator`);
             return;
         }
 
         // Store topic in-memory
         if (newTopic.trim().length === 0) {
             // Empty topic = clear topic
-            tenant.clearChannelTopic(channelName);
+            channel.clearTopic();
         } else {
-            tenant.setChannelTopic(channelName, newTopic);
+            channel.setTopic(newTopic, user.getUserPrefix());
         }
 
         // Broadcast topic change to all channel members
-        const userPrefix = this.getUserPrefix(connection);
+        const userPrefix = user.getUserPrefix();
         const topicMessage = `:${userPrefix} TOPIC ${channelName} :${newTopic}`;
-
-        this.server.broadcastToChannel(connection, channelName, topicMessage);
+        channel.broadcast(topicMessage);
 
         if (this.debug) {
-            console.log(`📝 [${connection.tenant}] ${connection.nickname} set topic for ${channelName}: ${newTopic}`);
+            console.log(`📝 [${user.getTenantName()}] ${user.getNickname()} set topic for ${channelName}: ${newTopic}`);
         }
     }
 }
