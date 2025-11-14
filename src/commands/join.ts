@@ -44,6 +44,14 @@ export class JoinCommand extends BaseIrcCommand {
         if (!user) return;
 
         try {
+            // Validate channel format and query schema/record info
+            const parsed = this.parseChannelName(channelName);
+            if (!parsed) {
+                this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                    `${channelName} :Invalid channel format. Use #schema or #schema/recordId`);
+                return;
+            }
+
             // Query schema/record info for topic
             const schemaInfo = await this.fetchSchemaInfo(connection, channelName);
 
@@ -97,8 +105,10 @@ export class JoinCommand extends BaseIrcCommand {
             }
 
         } catch (error) {
-            console.error(`❌ Failed to join channel ${channelName}:`, error);
-            this.sendNoSuchChannel(connection, channelName);
+            // Error already reported to user in fetchSchemaInfo
+            if (this.debug) {
+                console.error(`❌ Failed to join channel ${channelName}:`, error);
+            }
         }
     }
 
@@ -142,21 +152,34 @@ export class JoinCommand extends BaseIrcCommand {
                     const data = await response.json() as { data?: any[] };
                     const count = data.data?.length || 0;
                     return ` (${count} records available)`;
+                } else if (response.status === 404) {
+                    this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                        `${channelName} :Schema '${schema}' not found`);
+                    throw new Error('Schema not found');
                 } else if (response.status === 403) {
                     this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
                         `${channelName} :Access denied to schema '${schema}'`);
                     throw new Error('Access denied');
                 }
-                // 404 is allowed - schema might not exist yet
-                return ' (schema not found)';
+                // Other errors
+                this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                    `${channelName} :Unable to verify schema '${schema}'`);
+                throw new Error('Schema verification failed');
             }
         } catch (error) {
-            if (error instanceof Error && (error.message === 'Record not found' || error.message === 'Access denied')) {
+            if (error instanceof Error && (
+                error.message === 'Record not found' ||
+                error.message === 'Access denied' ||
+                error.message === 'Schema not found' ||
+                error.message === 'Schema verification failed'
+            )) {
                 throw error;
             }
-            // API error - log but allow join
+            // API error - log and reject join
             console.error(`⚠️  API query failed for ${channelName}:`, error);
-            return ' (unable to query data)';
+            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                `${channelName} :Unable to verify channel with API`);
+            throw new Error('API verification failed');
         }
 
         return '';
