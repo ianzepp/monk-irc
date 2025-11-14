@@ -154,12 +154,16 @@ export class IrcServer {
             const { FindFunction } = await import('../functions/find.js');
             const { CountFunction } = await import('../functions/count.js');
             const { GetFunction } = await import('../functions/get.js');
+            const { ShowFunction } = await import('../functions/show.js');
+            const { OpenFunction } = await import('../functions/open.js');
 
             // Register functions
             this.functionRegistry.register(new HelpFunction(this.config, this));
             this.functionRegistry.register(new FindFunction(this.config, this));
             this.functionRegistry.register(new CountFunction(this.config, this));
             this.functionRegistry.register(new GetFunction(this.config, this));
+            this.functionRegistry.register(new ShowFunction(this.config, this));
+            this.functionRegistry.register(new OpenFunction(this.config, this));
 
             if (this.config.debug) {
                 console.log(`⚡ Functions loaded: ${this.functionRegistry.getAll().length}`);
