@@ -157,6 +157,8 @@ export const IRC_REPLIES = {
     ERR_NOTONCHANNEL: '442',      // Not on channel
     ERR_USERONCHANNEL: '443',     // User already on channel
     ERR_NOTREGISTERED: '451',     // Not registered
+    ERR_INVITEONLYCHAN: '473',    // Cannot join channel (+i)
+    ERR_BADCHANNELKEY: '475',     // Cannot join channel (+k)
     ERR_NEEDMOREPARAMS: '461',    // Need more params
     ERR_ALREADYREGISTERED: '462', // Already registered
     ERR_NOPRIVILEGES: '481',      // No privileges (for operator commands)

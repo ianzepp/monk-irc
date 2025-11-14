@@ -5,6 +5,7 @@
 import { BaseIrcCommand } from '../lib/base-command.js';
 import type { IrcConnection, ServerConfig } from '../lib/types.js';
 import { IRC_REPLIES } from '../lib/types.js';
+import { ChannelMode } from '../lib/channel.js';
 
 export class JoinCommand extends BaseIrcCommand {
     readonly name = 'JOIN';
@@ -15,17 +16,19 @@ export class JoinCommand extends BaseIrcCommand {
     }
 
     async execute(connection: IrcConnection, args: string): Promise<void> {
-        const channelName = args.trim().split(' ')[0];
+        const parts = args.trim().split(' ');
+        const channelName = parts[0];
+        const key = parts[1]; // Optional channel key (+k mode)
 
         // Validate channel name provided
         if (!channelName) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NEEDMOREPARAMS, 'JOIN :Not enough parameters');
+            this.sendNeedMoreParams(connection, 'JOIN');
             return;
         }
 
         // Validate channel name format
         if (!this.isValidChannelName(channelName)) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL, `${channelName} :No such channel`);
+            this.sendNoSuchChannel(connection, channelName);
             return;
         }
 
@@ -33,120 +36,184 @@ export class JoinCommand extends BaseIrcCommand {
             console.log(`📍 [${connection.id}] ${connection.nickname} joining ${channelName}`);
         }
 
+        // Get tenant and user
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const user = tenant.getUserByConnection(connection);
+        if (!user) return;
+
         try {
-            // Parse channel name: #users or #users/217e9dcc
-            const parsed = this.parseChannelName(channelName);
-            let schemaInfo = '';
+            // Query schema/record info for topic
+            const schemaInfo = await this.fetchSchemaInfo(connection, channelName);
 
-            // Query schema or specific record data to verify access
-            if (parsed) {
-                const { schema, recordId } = parsed;
+            // Get or create channel
+            const channel = tenant.getOrCreateChannel(channelName, user.getNickname());
 
-                try {
-                    if (recordId) {
-                        // Record-specific channel: GET /api/data/{schema}/{recordId}
-                        const response = await this.apiRequest(connection, `/api/data/${schema}/${recordId}`);
-
-                        if (response.ok) {
-                            const result = await response.json() as { data?: any };
-                            const record = result.data;
-
-                            if (record) {
-                                // Show record identifier (could be name, title, username, etc.)
-                                const recordLabel = record.name || record.title || record.username || recordId;
-                                schemaInfo = ` (record: ${recordLabel})`;
-
-                                if (this.debug) {
-                                    console.log(`📄 [${connection.id}] Record ${schema}/${recordId} found: ${recordLabel}`);
-                                }
-                            } else {
-                                schemaInfo = ` (record: ${recordId})`;
-                            }
-                        } else if (response.status === 404) {
-                            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
-                                `${channelName} :Record not found in schema '${schema}'`);
-                            return;
-                        } else if (response.status === 403) {
-                            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
-                                `${channelName} :Access denied to record '${recordId}' in schema '${schema}'`);
-                            return;
-                        }
-                    } else {
-                        // Schema-level channel: GET /api/data/{schema}
-                        const response = await this.apiRequest(connection, `/api/data/${schema}`);
-
-                        if (response.ok) {
-                            const data = await response.json() as { data?: any[] };
-                            const count = data.data?.length || 0;
-                            schemaInfo = ` (${count} records available)`;
-
-                            if (this.debug) {
-                                console.log(`📊 [${connection.id}] Schema ${schema} has ${count} records`);
-                            }
-                        } else if (response.status === 404) {
-                            // Schema doesn't exist - still allow join (might be created later)
-                            schemaInfo = ' (schema not found)';
-                            if (this.debug) {
-                                console.log(`⚠️  [${connection.id}] Schema ${schema} not found, but allowing join`);
-                            }
-                        } else if (response.status === 403) {
-                            // User doesn't have access
-                            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
-                                `${channelName} :Access denied to schema '${schema}'`);
-                            return;
-                        }
-                    }
-                } catch (error) {
-                    // API error - log but allow join (maybe API is down temporarily)
-                    console.error(`⚠️  API query failed for ${channelName}:`, error);
-                    schemaInfo = ' (unable to query data)';
+            // Check if user can join (key, invite-only, etc.)
+            if (!channel.canJoin(user, key)) {
+                if (channel.hasMode('k')) {
+                    this.sendReply(connection, IRC_REPLIES.ERR_BADCHANNELKEY,
+                        `${channelName} :Cannot join channel (+k) - bad key`);
+                } else if (channel.hasMode('i')) {
+                    this.sendReply(connection, IRC_REPLIES.ERR_INVITEONLYCHAN,
+                        `${channelName} :Cannot join channel (+i)`);
                 }
+                return;
             }
 
-            // Pure bridge - in-memory only (no database persistence)
-            // Add to in-memory channel membership
-            this.server.addToChannel(connection, channelName);
+            // Check if user is already in channel
+            if (channel.hasMember(user)) {
+                if (this.debug) {
+                    console.log(`⚠️  [${connection.id}] ${user.getNickname()} already in ${channelName}`);
+                }
+                return;
+            }
+
+            // Add user to channel (first user becomes operator)
+            const isFirstMember = channel.isEmpty();
+            channel.addMember(user, isFirstMember ? new Set([ChannelMode.OPERATOR]) : new Set());
+            user.joinChannel(channel);
 
             // Send JOIN message to user (extended format if they have the capability)
-            const joinMessage = this.buildJoinMessage(connection, channelName, connection);
-            this.sendMessage(connection, joinMessage);
+            const joinMessage = this.buildJoinMessage(user, channelName, user);
+            user.sendMessage(joinMessage);
 
-            // Send topic - check for in-memory topic first, then fall back to schema/record info
-            const tenant = this.server.getTenantForConnection(connection);
-            const inMemoryTopic = tenant?.getChannelTopic(channelName);
+            // Send topic
+            this.sendTopic(connection, channel, schemaInfo);
 
-            if (inMemoryTopic) {
-                // In-memory topic takes precedence
-                this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :${inMemoryTopic}`);
-            } else if (schemaInfo && parsed) {
-                // Fall back to schema/record info
-                const { schema, recordId } = parsed;
-                if (recordId) {
-                    this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :Record context: ${schema}/${recordId}${schemaInfo}`);
-                } else {
-                    this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :Schema context: ${schema}${schemaInfo}`);
-                }
-            } else {
-                this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
-            }
-
-            // Get channel members and send names list
-            const members = this.server.getChannelMembers(connection, channelName);
-            const memberNicks = members.map((m: IrcConnection) => m.nickname).join(' ');
-
-            this.sendReply(connection, IRC_REPLIES.RPL_NAMREPLY, `= ${channelName} :${memberNicks}`);
-            this.sendReply(connection, IRC_REPLIES.RPL_ENDOFNAMES, `${channelName} :End of /NAMES list`);
+            // Send names list
+            this.sendNames(connection, channel);
 
             // Broadcast JOIN to other channel members with capability-aware formatting
-            this.broadcastJoinToChannel(connection, channelName);
+            this.broadcastJoin(channel, user);
 
             if (this.debug) {
-                console.log(`✅ [${connection.id}] ${connection.nickname} joined ${channelName}${schemaInfo}`);
+                const opStatus = isFirstMember ? ' (operator)' : '';
+                console.log(`✅ [${connection.id}] ${user.getNickname()} joined ${channelName}${opStatus}${schemaInfo ? ' ' + schemaInfo : ''}`);
             }
 
         } catch (error) {
             console.error(`❌ Failed to join channel ${channelName}:`, error);
-            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL, `${channelName} :Cannot join channel`);
+            this.sendNoSuchChannel(connection, channelName);
+        }
+    }
+
+    /**
+     * Fetch schema/record information for topic display
+     */
+    private async fetchSchemaInfo(connection: IrcConnection, channelName: string): Promise<string> {
+        const parsed = this.parseChannelName(channelName);
+        if (!parsed) return '';
+
+        const { schema, recordId } = parsed;
+
+        try {
+            if (recordId) {
+                // Record-specific channel: GET /api/data/{schema}/{recordId}
+                const response = await this.apiRequest(connection, `/api/data/${schema}/${recordId}`);
+
+                if (response.ok) {
+                    const result = await response.json() as { data?: any };
+                    const record = result.data;
+
+                    if (record) {
+                        const recordLabel = record.name || record.title || record.username || recordId;
+                        return ` (record: ${recordLabel})`;
+                    }
+                    return ` (record: ${recordId})`;
+                } else if (response.status === 404) {
+                    this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                        `${channelName} :Record not found in schema '${schema}'`);
+                    throw new Error('Record not found');
+                } else if (response.status === 403) {
+                    this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                        `${channelName} :Access denied to record '${recordId}' in schema '${schema}'`);
+                    throw new Error('Access denied');
+                }
+            } else {
+                // Schema-level channel: GET /api/data/{schema}
+                const response = await this.apiRequest(connection, `/api/data/${schema}`);
+
+                if (response.ok) {
+                    const data = await response.json() as { data?: any[] };
+                    const count = data.data?.length || 0;
+                    return ` (${count} records available)`;
+                } else if (response.status === 403) {
+                    this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                        `${channelName} :Access denied to schema '${schema}'`);
+                    throw new Error('Access denied');
+                }
+                // 404 is allowed - schema might not exist yet
+                return ' (schema not found)';
+            }
+        } catch (error) {
+            if (error instanceof Error && (error.message === 'Record not found' || error.message === 'Access denied')) {
+                throw error;
+            }
+            // API error - log but allow join
+            console.error(`⚠️  API query failed for ${channelName}:`, error);
+            return ' (unable to query data)';
+        }
+
+        return '';
+    }
+
+    /**
+     * Send topic to user
+     */
+    private sendTopic(connection: IrcConnection, channel: any, schemaInfo: string): void {
+        const channelName = channel.getName();
+        const topic = channel.getTopic();
+
+        if (topic) {
+            // In-memory topic takes precedence
+            this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :${topic}`);
+        } else if (schemaInfo) {
+            // Fall back to schema/record info
+            const parsed = this.parseChannelName(channelName);
+            if (parsed) {
+                const { schema, recordId } = parsed;
+                if (recordId) {
+                    this.sendReply(connection, IRC_REPLIES.RPL_TOPIC,
+                        `${channelName} :Record context: ${schema}/${recordId}${schemaInfo}`);
+                } else {
+                    this.sendReply(connection, IRC_REPLIES.RPL_TOPIC,
+                        `${channelName} :Schema context: ${schema}${schemaInfo}`);
+                }
+            }
+        } else {
+            this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
+        }
+    }
+
+    /**
+     * Send names list to user
+     */
+    private sendNames(connection: IrcConnection, channel: any): void {
+        const channelName = channel.getName();
+        const memberList = channel.getMemberListWithRoles();
+
+        this.sendReply(connection, IRC_REPLIES.RPL_NAMREPLY, `= ${channelName} :${memberList}`);
+        this.sendReply(connection, IRC_REPLIES.RPL_ENDOFNAMES, `${channelName} :End of /NAMES list`);
+    }
+
+    /**
+     * Broadcast JOIN to other channel members
+     */
+    private broadcastJoin(channel: any, joiningUser: any): void {
+        const channelName = channel.getName();
+        const members = channel.getMembers();
+
+        for (const member of members) {
+            // Skip the joining user (already sent their own JOIN)
+            if (member === joiningUser) {
+                continue;
+            }
+
+            // Send JOIN message in appropriate format based on member's capabilities
+            const joinMessage = this.buildJoinMessage(joiningUser, channelName, member);
+            member.sendMessage(joinMessage);
         }
     }
 
@@ -155,36 +222,17 @@ export class JoinCommand extends BaseIrcCommand {
      * Standard: :nick!user@host JOIN #channel
      * Extended: :nick!user@host JOIN #channel accountname :realname
      */
-    private buildJoinMessage(joiningUser: IrcConnection, channelName: string, target: IrcConnection): string {
-        const userPrefix = this.getUserPrefix(joiningUser);
+    private buildJoinMessage(joiningUser: any, channelName: string, targetUser: any): string {
+        const userPrefix = joiningUser.getUserPrefix();
 
-        if (target.capabilities.has('extended-join')) {
+        if (targetUser.hasCapability('extended-join')) {
             // Extended format includes account name and real name
-            const accountName = joiningUser.username || '*';
-            const realName = joiningUser.realname || 'Unknown';
+            const accountName = joiningUser.getUsername();
+            const realName = joiningUser.getRealname();
             return `:${userPrefix} JOIN ${channelName} ${accountName} :${realName}`;
         } else {
             // Standard format
             return `:${userPrefix} JOIN ${channelName}`;
-        }
-    }
-
-    /**
-     * Broadcast JOIN to channel members with capability-aware formatting
-     * Users with extended-join get extended format, others get standard format
-     */
-    private broadcastJoinToChannel(connection: IrcConnection, channelName: string): void {
-        const members = this.server.getChannelMembers(connection, channelName);
-
-        for (const member of members) {
-            // Skip the joining user (already sent their own JOIN)
-            if (member.id === connection.id) {
-                continue;
-            }
-
-            // Send JOIN message in appropriate format based on member's capabilities
-            const joinMessage = this.buildJoinMessage(connection, channelName, member);
-            this.sendMessage(member, joinMessage);
         }
     }
 }
