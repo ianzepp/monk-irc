@@ -81,8 +81,8 @@ export class JoinCommand extends BaseIrcCommand {
                 return;
             }
 
-            // Determine user's role based on API access level
-            const roles = await this.getUserRolesForChannel(connection, channelName, channel.isEmpty());
+            // Determine user's role based on their global access level
+            const roles = this.getUserRolesFromAccessLevel(user, channel.isEmpty());
 
             // Add user to channel with appropriate roles
             channel.addMember(user, roles);
@@ -115,17 +115,13 @@ export class JoinCommand extends BaseIrcCommand {
     }
 
     /**
-     * Determine user's channel roles based on API access level
+     * Determine user's channel roles based on their global access level
      * Maps API access levels to IRC channel modes:
      * - root/full → Operator (@)
      * - edit → Voice (+)
      * - read → Regular member (no prefix)
      */
-    private async getUserRolesForChannel(
-        connection: IrcConnection,
-        channelName: string,
-        isFirstMember: boolean
-    ): Promise<Set<ChannelMode>> {
+    private getUserRolesFromAccessLevel(user: any, isFirstMember: boolean): Set<ChannelMode> {
         const roles = new Set<ChannelMode>();
 
         // First user in channel always gets operator (channel creator)
@@ -134,51 +130,17 @@ export class JoinCommand extends BaseIrcCommand {
             return roles;
         }
 
-        // Get schema name from channel
-        const schemaName = this.getSchemaFromChannel(channelName);
-        if (!schemaName) {
-            // Non-schema channels get no special roles
-            return roles;
+        // Map user's access level to channel roles
+        const accessLevel = user.getAccessLevel();
+
+        if (accessLevel === 'root' || accessLevel === 'full') {
+            // Full access → Operator
+            roles.add(ChannelMode.OPERATOR);
+        } else if (accessLevel === 'edit') {
+            // Edit access → Voice
+            roles.add(ChannelMode.VOICE);
         }
-
-        try {
-            // Query user's access level for this schema
-            const response = await this.apiRequest(connection, `/api/describe/schema/${schemaName}`);
-
-            if (!response.ok) {
-                // If we can't determine access, give no special roles
-                return roles;
-            }
-
-            const result = await response.json() as {
-                success?: boolean;
-                data?: {
-                    access?: string;
-                    permissions?: { write?: boolean; delete?: boolean };
-                };
-            };
-
-            const access = result.data?.access;
-            const permissions = result.data?.permissions;
-
-            // Map access level to channel roles
-            if (access === 'root' || access === 'full') {
-                // Full access → Operator
-                roles.add(ChannelMode.OPERATOR);
-            } else if (access === 'edit' || permissions?.write || permissions?.delete) {
-                // Edit access → Voice
-                roles.add(ChannelMode.VOICE);
-            }
-            // read access → no special roles
-
-            if (this.debug && roles.size > 0) {
-                console.log(`🎭 [${connection.id}] User has ${access} access to ${schemaName} → roles: ${Array.from(roles).join(', ')}`);
-            }
-
-        } catch (error) {
-            console.error(`⚠️  Failed to fetch access level for ${schemaName}:`, error);
-            // On error, give no special roles
-        }
+        // read access → no special roles
 
         return roles;
     }

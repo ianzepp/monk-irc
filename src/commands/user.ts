@@ -129,13 +129,15 @@ export class UserCommand extends BaseIrcCommand {
 
         const result = await response.json() as {
             success?: boolean;
-            data?: { jwt?: string; token?: string };
+            data?: { jwt?: string; token?: string; access?: string };
             jwt?: string;
-            token?: string
+            token?: string;
+            access?: string;
         };
 
         // Handle both nested (data.token) and flat (token) response structures
         const jwt = result.data?.token || result.data?.jwt || result.jwt || result.token;
+        const accessLevel = result.data?.access || result.access;
 
         if (!jwt) {
             throw new Error(`No JWT token in API response: ${JSON.stringify(result)}`);
@@ -163,13 +165,14 @@ export class UserCommand extends BaseIrcCommand {
 
         // Set connection and authentication on user
         user.setConnection(connection);
-        user.authenticate(jwt, connection.apiUrl!, this.serverName);
+        user.authenticate(jwt, connection.apiUrl!, this.serverName, accessLevel);
 
         // Add user to tenant
         tenant.addUser(user);
 
         if (this.debug) {
-            console.log(`🏢 [${connection.id}] Registered with tenant: ${connection.tenant}`);
+            const accessInfo = accessLevel ? ` (access: ${accessLevel})` : '';
+            console.log(`🏢 [${connection.id}] Registered with tenant: ${connection.tenant}${accessInfo}`);
         }
 
         // Notify tenant-aware connections if this is the first user in the tenant

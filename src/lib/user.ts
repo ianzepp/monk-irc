@@ -22,6 +22,7 @@ export class User {
     private jwt?: string;
     private apiUrl?: string;
     private serverName?: string;
+    private accessLevel?: string; // root, full, edit, read from API
 
     private readonly createdAt: Date;
     private lastActivity: Date;
@@ -304,16 +305,21 @@ export class User {
         return this.tenant.getName();
     }
 
-    authenticate(jwt: string, apiUrl: string, serverName: string): void {
+    authenticate(jwt: string, apiUrl: string, serverName: string, accessLevel?: string): void {
         this.jwt = jwt;
         this.apiUrl = apiUrl;
         this.serverName = serverName;
+        this.accessLevel = accessLevel;
 
         if (this.connection) {
             this.connection.jwt = jwt;
             this.connection.apiUrl = apiUrl;
             this.connection.serverName = serverName;
         }
+    }
+
+    getAccessLevel(): string | undefined {
+        return this.accessLevel;
     }
 
     isAuthenticated(): boolean {
