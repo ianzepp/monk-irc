@@ -66,48 +66,4 @@ export class ListCommand extends BaseIrcCommand {
         // End of LIST
         this.sendReply(connection, IRC_REPLIES.RPL_LISTEND, ':End of /LIST');
     }
-
-    /**
-     * Fetch available schemas from monk-api
-     */
-    private async fetchSchemas(connection: IrcConnection): Promise<Array<{ name: string; description?: string }>> {
-        try {
-            // Query the /api/data/schemas endpoint to get full schema records (name, description, etc.)
-            const response = await this.apiRequest(connection, '/api/data/schemas');
-
-            if (!response.ok) {
-                if (this.debug) {
-                    console.log(`📋 [${connection.id}] API /api/data/schemas returned ${response.status}`);
-                }
-                return [];
-            }
-
-            const result = await response.json() as {
-                success?: boolean;
-                data?: Array<{ name: string; description?: string; [key: string]: any }>;
-            };
-
-            // Handle response: monk-api returns { success: true, data: [{ name: "users", description: "...", ... }] }
-            const schemas = result.data || [];
-
-            // Extract just name and description
-            const schemaList = schemas.map(schema => ({
-                name: schema.name,
-                description: schema.description
-            }));
-
-            if (this.debug) {
-                const names = schemaList.map(s => s.name).join(', ');
-                console.log(`📋 [${connection.id}] Fetched ${schemaList.length} schemas from API: ${names}`);
-            }
-
-            return schemaList;
-
-        } catch (error) {
-            if (this.debug) {
-                console.error(`❌ Error fetching schemas:`, error);
-            }
-            return [];
-        }
-    }
 }

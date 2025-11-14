@@ -4,6 +4,11 @@
 
 import type * as net from 'net';
 
+// Export domain classes
+export { Channel, ChannelMode, type ChannelTopicInfo } from './channel.js';
+export { User } from './user.js';
+export { Tenant } from './tenant.js';
+
 export interface IrcConnection {
     socket: net.Socket;
     id: string;

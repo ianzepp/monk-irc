@@ -207,4 +207,249 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
         };
     }
 
+    // ===== Helper Methods (from code review) =====
+
+    /**
+     * Send error with consistent formatting
+     */
+    protected sendError(
+        connection: IrcConnection,
+        errorCode: string,
+        target: string,
+        message: string
+    ): void {
+        this.sendReply(connection, errorCode, `${target} :${message}`);
+    }
+
+    /**
+     * Send parameter error for a command
+     */
+    protected sendNeedMoreParams(connection: IrcConnection, command: string): void {
+        this.sendReply(connection, IRC_REPLIES.ERR_NEEDMOREPARAMS,
+            `${command} :Not enough parameters`);
+    }
+
+    /**
+     * Send "no such nick/channel" error
+     */
+    protected sendNoSuchNick(connection: IrcConnection, target: string): void {
+        this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK,
+            `${target} :No such nick/channel`);
+    }
+
+    /**
+     * Send "no such channel" error
+     */
+    protected sendNoSuchChannel(connection: IrcConnection, channel: string): void {
+        this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+            `${channel} :No such channel`);
+    }
+
+    /**
+     * Send "not on channel" error
+     */
+    protected sendNotOnChannel(connection: IrcConnection, channel: string): void {
+        this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL,
+            `${channel} :You're not on that channel`);
+    }
+
+    /**
+     * Parse message command arguments (PRIVMSG, NOTICE format)
+     * Returns { target, message } or null if invalid
+     */
+    protected parseMessageCommand(
+        connection: IrcConnection,
+        args: string,
+        commandName: string
+    ): { target: string; message: string } | null {
+        const spaceIndex = args.indexOf(' ');
+
+        if (spaceIndex === -1) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NORECIPIENT,
+                `:No recipient given (${commandName})`);
+            return null;
+        }
+
+        const target = args.substring(0, spaceIndex);
+        let message = args.substring(spaceIndex + 1);
+
+        if (message.startsWith(':')) {
+            message = message.substring(1);
+        }
+
+        if (!message) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOTEXTTOSEND, ':No text to send');
+            return null;
+        }
+
+        return { target, message };
+    }
+
+    /**
+     * Parse colon-prefixed message from args
+     * Example: "text before :message text" -> "message text"
+     */
+    protected parseColonMessage(args: string): string | null {
+        const colonIndex = args.indexOf(':');
+        if (colonIndex === -1) {
+            return null;
+        }
+        return args.substring(colonIndex + 1);
+    }
+
+    /**
+     * Parse space-separated arguments
+     */
+    protected parseArgs(args: string): string[] {
+        return args.trim().split(/\s+/).filter(s => s.length > 0);
+    }
+
+    /**
+     * Authenticate user with monk-api
+     * Consolidates duplicate auth logic from nick.ts and user.ts
+     */
+    protected async authenticateWithApi(
+        apiUrl: string,
+        tenant: string,
+        username: string
+    ): Promise<string | null> {
+        try {
+            const response = await fetch(`${apiUrl}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tenant, username })
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const result = await response.json() as {
+                success?: boolean;
+                data?: { jwt?: string; token?: string };
+                jwt?: string;
+                token?: string
+            };
+
+            const jwt = result.data?.token || result.data?.jwt || result.jwt || result.token;
+            return jwt || null;
+        } catch (error) {
+            if (this.debug) {
+                console.error('Authentication error:', error);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Handle common API response patterns and errors
+     */
+    protected async handleApiResponse<T>(
+        connection: IrcConnection,
+        response: Response,
+        context: { channelName?: string; schemaName?: string }
+    ): Promise<T | null> {
+        if (!response.ok) {
+            if (response.status === 404) {
+                if (context.channelName) {
+                    this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                        `${context.channelName} :Resource not found`);
+                }
+            } else if (response.status === 403) {
+                if (context.channelName && context.schemaName) {
+                    this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                        `${context.channelName} :Access denied to schema '${context.schemaName}'`);
+                }
+            }
+            return null;
+        }
+
+        const result = await response.json() as { data?: T };
+        return result.data || null;
+    }
+
+    /**
+     * Check if user has permission level on schema
+     */
+    protected async checkSchemaPermission(
+        connection: IrcConnection,
+        schemaName: string,
+        requiredLevel: 'read' | 'edit' | 'full' | 'root'
+    ): Promise<boolean> {
+        try {
+            const response = await this.apiRequest(connection,
+                `/api/describe/schema/${schemaName}`);
+
+            if (!response.ok) {
+                return false;
+            }
+
+            const result = await response.json() as {
+                success?: boolean;
+                data?: {
+                    access?: string;
+                    permissions?: { read?: boolean; write?: boolean; delete?: boolean };
+                };
+            };
+
+            const access = result.data?.access;
+            const permissions = result.data?.permissions;
+
+            // Root always allowed
+            if (access === 'root') return true;
+
+            // Check level hierarchy
+            switch (requiredLevel) {
+                case 'root':
+                    return access === 'root';
+                case 'full':
+                    return access === 'root' || access === 'full';
+                case 'edit':
+                    return access === 'root' || access === 'full' || access === 'edit' ||
+                           !!permissions?.write || !!permissions?.delete;
+                case 'read':
+                    return access === 'root' || access === 'full' || access === 'edit' ||
+                           access === 'read' || !!permissions?.read;
+                default:
+                    return false;
+            }
+        } catch (error) {
+            if (this.debug) {
+                console.error('Permission check error:', error);
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Fetch schema list from API
+     */
+    protected async fetchSchemas(
+        connection: IrcConnection
+    ): Promise<Array<{ name: string; description?: string }>> {
+        try {
+            const response = await this.apiRequest(connection, '/api/data/schemas');
+
+            if (!response.ok) {
+                return [];
+            }
+
+            const result = await response.json() as {
+                success?: boolean;
+                data?: Array<{ name: string; description?: string; [key: string]: any }>;
+            };
+
+            return (result.data || []).map(schema => ({
+                name: schema.name,
+                description: schema.description
+            }));
+        } catch (error) {
+            if (this.debug) {
+                console.error('Error fetching schemas:', error);
+            }
+            return [];
+        }
+    }
+
 }
+
