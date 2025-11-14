@@ -18,6 +18,13 @@ export class ListCommand extends BaseIrcCommand {
         // Start of LIST
         this.sendReply(connection, IRC_REPLIES.RPL_LISTSTART, 'Channel :Users  Name');
 
+        // Get tenant
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) {
+            this.sendReply(connection, IRC_REPLIES.RPL_LISTEND, ':End of /LIST');
+            return;
+        }
+
         try {
             // Query monk-api for available schemas
             const schemas = await this.fetchSchemas(connection);
@@ -26,7 +33,8 @@ export class ListCommand extends BaseIrcCommand {
                 // List each schema as a channel
                 for (const schema of schemas) {
                     const channelName = `#${schema.name}`;
-                    const memberCount = this.server.getChannelMembers(connection, channelName).length;
+                    const channel = tenant.getChannel(channelName);
+                    const memberCount = channel ? channel.getMemberCount() : 0;
                     const topic = schema.description || `Schema: ${schema.name}`;
 
                     // Format: 322 <nick> <channel> <usercount> :<topic>
@@ -39,11 +47,12 @@ export class ListCommand extends BaseIrcCommand {
             }
 
             // Also list any active record-specific channels (#schema/recordId)
-            const activeChannels = Array.from(this.server.getActiveChannels(connection)) as string[];
+            const activeChannels = tenant.getChannelNames();
             for (const channelName of activeChannels) {
                 // Only show record-specific channels (with /)
                 if (channelName.includes('/')) {
-                    const memberCount = this.server.getChannelMembers(connection, channelName).length;
+                    const channel = tenant.getChannel(channelName);
+                    const memberCount = channel ? channel.getMemberCount() : 0;
                     this.sendReply(connection, IRC_REPLIES.RPL_LIST, `${channelName} ${memberCount} :Record-specific channel`);
                 }
             }
@@ -56,9 +65,10 @@ export class ListCommand extends BaseIrcCommand {
                 console.log(`📋 [${connection.id}] Falling back to active channels only`);
             }
 
-            const activeChannels = Array.from(this.server.getActiveChannels(connection)) as string[];
+            const activeChannels = tenant.getChannelNames();
             for (const channelName of activeChannels) {
-                const memberCount = this.server.getChannelMembers(connection, channelName).length;
+                const channel = tenant.getChannel(channelName);
+                const memberCount = channel ? channel.getMemberCount() : 0;
                 this.sendReply(connection, IRC_REPLIES.RPL_LIST, `${channelName} ${memberCount} :Active channel`);
             }
         }
