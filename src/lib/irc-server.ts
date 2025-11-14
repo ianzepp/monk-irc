@@ -31,7 +31,7 @@ export class IrcServer {
             this.server.listen(this.config.port, this.config.host, () => {
                 console.log(`🚀 IRC server listening on ${this.config.host}:${this.config.port}`);
                 console.log(`💬 Connect with: irssi -c ${this.config.host} -p ${this.config.port}`);
-                console.log(`🔗 API servers: ${Array.from(this.config.apiServers.entries()).map(([k,v]) => `${k}=${v}`).join(', ')}`);
+                console.log(`🔗 API backend: ${this.config.apiUrl}`);
                 console.log(`🏷️  Server name: ${this.config.serverName}`);
                 resolve();
             });
@@ -78,6 +78,17 @@ export class IrcServer {
             const { IsonCommand } = await import('../commands/ison.js');
             const { VersionCommand } = await import('../commands/version.js');
             const { MotdCommand } = await import('../commands/motd.js');
+            const { HelpCommand } = await import('../commands/help.js');
+            const { InfoCommand } = await import('../commands/info.js');
+            const { UserhostCommand } = await import('../commands/userhost.js');
+            const { TimeCommand } = await import('../commands/time.js');
+            const { StatsCommand } = await import('../commands/stats.js');
+            const { AdminCommand } = await import('../commands/admin.js');
+            const { OperCommand } = await import('../commands/oper.js');
+            const { KillCommand } = await import('../commands/kill.js');
+            const { RehashCommand } = await import('../commands/rehash.js');
+            const { WallopsCommand } = await import('../commands/wallops.js');
+            const { LinksCommand } = await import('../commands/links.js');
 
             // Register commands (pass server instance for methods like registerNickname, channel management)
             this.registerCommand(new CapCommand(this.config, this));
@@ -97,10 +108,21 @@ export class IrcServer {
             this.registerCommand(new ModeCommand(this.config, this));
             this.registerCommand(new KickCommand(this.config, this));
             this.registerCommand(new InviteCommand(this.config, this));
-            this.registerCommand(new AwayCommand(this.config));
+            this.registerCommand(new AwayCommand(this.config, this));
             this.registerCommand(new IsonCommand(this.config, this));
             this.registerCommand(new VersionCommand(this.config));
             this.registerCommand(new MotdCommand(this.config));
+            this.registerCommand(new HelpCommand(this.config));
+            this.registerCommand(new InfoCommand(this.config));
+            this.registerCommand(new UserhostCommand(this.config, this));
+            this.registerCommand(new TimeCommand(this.config));
+            this.registerCommand(new StatsCommand(this.config, this));
+            this.registerCommand(new AdminCommand(this.config));
+            this.registerCommand(new OperCommand(this.config));
+            this.registerCommand(new KillCommand(this.config));
+            this.registerCommand(new RehashCommand(this.config));
+            this.registerCommand(new WallopsCommand(this.config));
+            this.registerCommand(new LinksCommand(this.config));
 
             if (this.config.debug) {
                 console.log(`📋 Command handlers loaded: ${this.commandHandlers.size}`);
@@ -185,12 +207,12 @@ export class IrcServer {
                 continue;
             }
 
-            try {
-                await handler.execute(connection, args);
-            } catch (error) {
+            // Execute command asynchronously without blocking the message loop
+            // This allows multiple commands to be processed in parallel
+            handler.execute(connection, args).catch((error) => {
                 console.error(`❌ Error executing ${command}:`, error);
                 this.sendReply(connection, '400', ':Internal server error');
-            }
+            });
         }
     }
 

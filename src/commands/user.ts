@@ -21,6 +21,27 @@ export class UserCommand extends BaseIrcCommand {
             return;
         }
 
+        // Check if username and tenant were already provided via NICK command
+        const hasAuthFromNick = connection.username && connection.tenant && connection.jwt;
+
+        if (hasAuthFromNick) {
+            // Authentication already done via NICK command
+            // Just extract realname from USER command (optional)
+            const realname = args.includes(':')
+                ? args.substring(args.indexOf(':') + 1)
+                : 'Unknown';
+
+            connection.realname = realname;
+
+            if (this.debug) {
+                console.log(`📝 [${connection.id}] USER command: using auth from NICK, realname="${realname}"`);
+            }
+
+            // Check if we should now complete registration
+            this.checkRegistration(connection);
+            return;
+        }
+
         // Parse USER command: USER <username@tenant> <mode> <servername> :<realname>
         const parts = args.split(' ');
         if (parts.length < 4) {
@@ -30,7 +51,7 @@ export class UserCommand extends BaseIrcCommand {
 
         const userTenant = parts[0];      // username@tenant
         const mode = parts[1];            // Mode (ignored - usually 0 or *)
-        const serverName = parts[2];      // API server identifier (dev/testing/prod)
+        const unused = parts[2];          // Unused parameter (standard IRC - usually * or 0)
         const realname = args.substring(args.indexOf(':') + 1) || 'Unknown';
 
         // Parse username@tenant
@@ -50,23 +71,17 @@ export class UserCommand extends BaseIrcCommand {
             return;
         }
 
-        // Resolve API server URL
-        const apiUrl = this.config.apiServers.get(serverName || this.config.defaultServer);
-        if (!apiUrl) {
-            this.sendReply(connection, IRC_REPLIES.ERR_UNKNOWNCOMMAND,
-                `USER :Invalid server name '${serverName}'. Available: ${Array.from(this.config.apiServers.keys()).join(', ')}`);
-            return;
-        }
+        // Use configured API URL (single backend per monk-irc instance)
+        const apiUrl = this.config.apiUrl;
 
         // Store connection info
         connection.username = username;
         connection.tenant = tenant;
-        connection.serverName = serverName;
         connection.apiUrl = apiUrl;
         connection.realname = realname;
 
         if (this.debug) {
-            console.log(`📝 [${connection.id}] User info set: ${username}@${tenant} via ${serverName} (${apiUrl})`);
+            console.log(`📝 [${connection.id}] User info set: ${username}@${tenant} (${apiUrl})`);
         }
 
         // Authenticate with monk-api

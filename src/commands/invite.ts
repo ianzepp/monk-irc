@@ -62,12 +62,43 @@ export class InviteCommand extends BaseIrcCommand {
         // Confirm to inviter (RPL_INVITING)
         this.sendReply(connection, '341', `${targetNick} ${channelName}`);
 
+        // Broadcast INVITE to channel members with invite-notify capability
+        this.broadcastInviteNotification(connection, targetNick, channelName);
+
         // Notify channel (optional - some servers do this)
         const schemaName = this.getSchemaFromChannel(channelName);
         const schemaInfo = schemaName ? ` (schema: ${schemaName})` : '';
 
         if (this.debug) {
             console.log(`💌 [${connection.id}] ${connection.nickname} invited ${targetNick} to ${channelName}${schemaInfo}`);
+        }
+    }
+
+    /**
+     * Broadcast INVITE notification to channel members with invite-notify capability
+     * Format: :inviter!user@host INVITE invitee #channel
+     */
+    private broadcastInviteNotification(inviter: IrcConnection, targetNick: string, channelName: string): void {
+        const inviterPrefix = this.getUserPrefix(inviter);
+        const inviteMessage = `:${inviterPrefix} INVITE ${targetNick} ${channelName}`;
+
+        // Get all channel members
+        const members = this.server.getChannelMembers(inviter, channelName);
+
+        for (const member of members) {
+            // Skip the inviter (they already got confirmation)
+            if (member.id === inviter.id) {
+                continue;
+            }
+
+            // Only send to members with invite-notify capability
+            if (member.capabilities.has('invite-notify')) {
+                this.sendMessage(member, inviteMessage);
+
+                if (this.debug) {
+                    console.log(`📢 [${member.id}] Notified ${member.nickname} of INVITE ${targetNick} to ${channelName}`);
+                }
+            }
         }
     }
 }

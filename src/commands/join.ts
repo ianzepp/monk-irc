@@ -107,8 +107,9 @@ export class JoinCommand extends BaseIrcCommand {
             // Add to in-memory channel membership
             this.server.addToChannel(connection, channelName);
 
-            // Send JOIN message to user
-            this.sendMessage(connection, `:${this.getUserPrefix(connection)} JOIN ${channelName}`);
+            // Send JOIN message to user (extended format if they have the capability)
+            const joinMessage = this.buildJoinMessage(connection, channelName, connection);
+            this.sendMessage(connection, joinMessage);
 
             // Send topic - check for in-memory topic first, then fall back to schema/record info
             const tenant = this.server.getTenantForConnection(connection);
@@ -136,13 +137,8 @@ export class JoinCommand extends BaseIrcCommand {
             this.sendReply(connection, IRC_REPLIES.RPL_NAMREPLY, `= ${channelName} :${memberNicks}`);
             this.sendReply(connection, IRC_REPLIES.RPL_ENDOFNAMES, `${channelName} :End of /NAMES list`);
 
-            // Broadcast JOIN to other channel members
-            this.server.broadcastToChannel(
-                connection,
-                channelName,
-                `:${this.getUserPrefix(connection)} JOIN ${channelName}`,
-                connection
-            );
+            // Broadcast JOIN to other channel members with capability-aware formatting
+            this.broadcastJoinToChannel(connection, channelName);
 
             if (this.debug) {
                 console.log(`✅ [${connection.id}] ${connection.nickname} joined ${channelName}${schemaInfo}`);
@@ -151,6 +147,44 @@ export class JoinCommand extends BaseIrcCommand {
         } catch (error) {
             console.error(`❌ Failed to join channel ${channelName}:`, error);
             this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL, `${channelName} :Cannot join channel`);
+        }
+    }
+
+    /**
+     * Build JOIN message with extended format if target has extended-join capability
+     * Standard: :nick!user@host JOIN #channel
+     * Extended: :nick!user@host JOIN #channel accountname :realname
+     */
+    private buildJoinMessage(joiningUser: IrcConnection, channelName: string, target: IrcConnection): string {
+        const userPrefix = this.getUserPrefix(joiningUser);
+
+        if (target.capabilities.has('extended-join')) {
+            // Extended format includes account name and real name
+            const accountName = joiningUser.username || '*';
+            const realName = joiningUser.realname || 'Unknown';
+            return `:${userPrefix} JOIN ${channelName} ${accountName} :${realName}`;
+        } else {
+            // Standard format
+            return `:${userPrefix} JOIN ${channelName}`;
+        }
+    }
+
+    /**
+     * Broadcast JOIN to channel members with capability-aware formatting
+     * Users with extended-join get extended format, others get standard format
+     */
+    private broadcastJoinToChannel(connection: IrcConnection, channelName: string): void {
+        const members = this.server.getChannelMembers(connection, channelName);
+
+        for (const member of members) {
+            // Skip the joining user (already sent their own JOIN)
+            if (member.id === connection.id) {
+                continue;
+            }
+
+            // Send JOIN message in appropriate format based on member's capabilities
+            const joinMessage = this.buildJoinMessage(connection, channelName, member);
+            this.sendMessage(member, joinMessage);
         }
     }
 }

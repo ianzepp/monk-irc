@@ -24,7 +24,11 @@ export class CapCommand extends BaseIrcCommand {
     // Available capabilities
     private readonly AVAILABLE_CAPABILITIES = new Set([
         'multi-prefix',
-        'tenant-aware'
+        'tenant-aware',
+        'server-time',
+        'away-notify',
+        'extended-join',
+        'invite-notify'
     ]);
 
     constructor(config: ServerConfig, private server: any) {

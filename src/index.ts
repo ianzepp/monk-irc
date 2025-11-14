@@ -9,24 +9,14 @@ import { IrcServer } from './lib/irc-server.js';
 import type { ServerConfig } from './lib/types.js';
 
 async function createServer(): Promise<IrcServer> {
-    // Build API servers map from environment variables
-    const apiServers = new Map<string, string>();
-
-    // Load API server configurations
-    apiServers.set('dev', process.env.API_SERVER_DEV || 'http://localhost:9001');
-    if (process.env.API_SERVER_TESTING) {
-        apiServers.set('testing', process.env.API_SERVER_TESTING);
-    }
-    if (process.env.API_SERVER_PROD) {
-        apiServers.set('prod', process.env.API_SERVER_PROD);
-    }
+    // Single API backend URL - different environments use different monk-irc instances
+    const apiUrl = process.env.MONK_API_URL || 'http://localhost:9001';
 
     const config: ServerConfig = {
         port: parseInt(process.env.IRC_PORT || '6667'),
         host: process.env.IRC_HOST || 'localhost',
         serverName: process.env.IRC_SERVER_NAME || 'irc.monk.local',
-        apiServers,
-        defaultServer: process.env.API_SERVER_DEFAULT || 'dev',
+        apiUrl,
         debug: process.env.NODE_ENV === 'development'
     };
 

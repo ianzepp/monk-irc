@@ -16,7 +16,7 @@ IRC Client → monk-irc (bridge) → monk-api
 - **Per-User Auth**: Each IRC connection authenticates independently to monk-api
 - **Multi-Tenant**: Users specify tenant during IRC login (username@tenant format)
 - **Enterprise Isolation**: Complete tenant isolation - users from different tenants never see each other
-- **Multi-Server**: Support multiple API backends (dev/testing/prod)
+- **Standard IRC Protocol**: Compatible with any IRC client (irssi, weechat, hexchat, etc.)
 - **Schema Channels**: IRC channels map to monk-api schemas for data operations
 - **Record Channels**: Focused channels for specific records (#schema/recordId)
 
@@ -53,11 +53,8 @@ IRC_PORT=6667
 IRC_HOST=localhost
 IRC_SERVER_NAME=irc.monk.local
 
-# API Server Endpoints
-API_SERVER_DEV=http://localhost:9001
-API_SERVER_TESTING=http://localhost:3001
-# API_SERVER_PROD=https://api.monk.example.com
-API_SERVER_DEFAULT=dev
+# monk-api Backend (single URL per monk-irc instance)
+MONK_API_URL=http://localhost:9001
 
 NODE_ENV=development
 ```
@@ -80,20 +77,22 @@ Username: root@cli-test
 
 ```
 NICK alice
-USER root@cli-test 0 dev :Alice Smith
-     │            │ │   │
-     │            │ │   └─> Display name
-     │            │ └─────> API server (dev/testing/prod)
-     │            └───────> Mode (ignored)
-     └────────────────────> username@tenant
+USER root@cli-test 0 * :Alice Smith
+     │            │ │ │
+     │            │ │ └─> Display name
+     │            │ └───> Unused (standard IRC)
+     │            └─────> Mode (ignored)
+     └──────────────────> username@tenant
 ```
 
 **What happens:**
 1. monk-irc receives USER command
 2. Parses `root@cli-test` → username="root", tenant="cli-test"
-3. Calls `POST /auth/login` to monk-api with tenant and username
+3. Calls `POST /auth/login` to monk-api (configured via MONK_API_URL)
 4. Stores JWT for this connection
 5. All subsequent operations use this user's JWT for API calls
+
+**Note:** The third parameter (`*` or `0`) is unused per standard IRC protocol. Each monk-irc instance connects to a single monk-api backend (see [Multi-Environment Deployment](#multi-environment-deployment) below).
 
 ### Example: Multiple Users, Different Tenants
 
@@ -452,26 +451,43 @@ Each connection has its own JWT, enabling:
 - Multi-tenant isolation (Alice can't see Bob's tenant data)
 - Audit trails in monk-api (operations logged by user)
 
-## Multi-Server Support
+## Multi-Environment Deployment
 
-Configure multiple API backends:
+Each monk-irc instance connects to **one** monk-api backend. For multiple environments, deploy separate monk-irc instances:
 
+```
+Development Environment:
+  irc-dev.example.com:6667 → monk-irc (MONK_API_URL=http://api-dev:9001)
+
+Testing Environment:
+  irc-test.example.com:6667 → monk-irc (MONK_API_URL=http://api-test:9001)
+
+Production Environment:
+  irc.example.com:6667 → monk-irc (MONK_API_URL=https://api.example.com)
+```
+
+### Why Single Backend per Instance?
+
+**Original Design**: USER command's third parameter specified API backend (dev/testing/prod)
+
+**Problem**: This parameter is historically unused in IRC protocol and not configurable in standard IRC clients
+
+**Solution**: Follow IRC standard - each server instance has one backend, configured via environment
+
+**Benefits**:
+- ✅ **Standard IRC Compatibility**: Works with any IRC client (irssi, weechat, hexchat, etc.)
+- ✅ **Network-Level Routing**: Environment selection via DNS/connection, not application protocol
+- ✅ **Cleaner Architecture**: Separation of concerns - IRC protocol vs deployment topology
+- ✅ **Bot Compatibility**: monk-bot works with standard `irc` library without custom USER commands
+
+For local development, run multiple instances on different ports:
 ```bash
-API_SERVER_DEV=http://localhost:9001
-API_SERVER_TESTING=http://localhost:3001
-API_SERVER_PROD=https://api.production.com
-API_SERVER_DEFAULT=dev
-```
+# Terminal 1: Development
+MONK_API_URL=http://localhost:9001 IRC_PORT=6667 npm start
 
-Users select server during login:
-
+# Terminal 2: Testing
+MONK_API_URL=http://localhost:3001 IRC_PORT=6668 npm start
 ```
-USER root@cli-test 0 dev :Alice      # → localhost:9001
-USER root@cli-test 0 testing :Alice  # → localhost:3001
-USER root@cli-test 0 prod :Alice     # → production.com
-```
-
-Different users can connect to different API servers simultaneously.
 
 ## Integration with monk-bot
 

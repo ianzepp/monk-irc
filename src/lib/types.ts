@@ -54,8 +54,7 @@ export interface ServerConfig {
     port: number;
     host: string;
     serverName: string;      // irc.monk.local
-    apiServers: Map<string, string>;  // serverName → API URL mapping
-    defaultServer: string;   // Default API server identifier
+    apiUrl: string;          // monk-api backend URL (single server)
     debug: boolean;
 }
 
@@ -73,6 +72,9 @@ export const IRC_REPLIES = {
     RPL_MYINFO: '004',            // Server info
 
     // Channel operations
+    RPL_LISTSTART: '321',         // Start of LIST
+    RPL_LIST: '322',              // Channel list entry
+    RPL_LISTEND: '323',           // End of LIST
     RPL_NOTOPIC: '331',           // No topic set
     RPL_TOPIC: '332',             // Channel topic
     RPL_NAMREPLY: '353',          // Names list
@@ -98,10 +100,42 @@ export const IRC_REPLIES = {
     // VERSION reply
     RPL_VERSION: '351',           // Server version
 
+    // TIME reply
+    RPL_TIME: '391',              // Server time
+
+    // INFO replies
+    RPL_INFO: '371',              // Info line
+    RPL_ENDOFINFO: '374',         // End of INFO
+
+    // STATS replies
+    RPL_STATSLINE: '210',         // Generic stats line
+    RPL_STATSUPTIME: '242',       // Server uptime
+    RPL_STATSCLINE: '213',        // Connection stats
+    RPL_STATSLINKINFO: '211',     // Link info
+    RPL_ENDOFSTATS: '219',        // End of STATS
+
+    // ADMIN replies
+    RPL_ADMINME: '256',           // Admin info
+    RPL_ADMINLOC1: '257',         // Admin location 1
+    RPL_ADMINLOC2: '258',         // Admin location 2
+    RPL_ADMINEMAIL: '259',        // Admin email
+
+    // USERHOST reply
+    RPL_USERHOST: '302',          // Userhost response
+
+    // HELP replies
+    RPL_HELPSTART: '704',         // Start of help
+    RPL_HELPTXT: '705',           // Help text
+    RPL_ENDOFHELP: '706',         // End of help
+
     // Tenant-aware commands (custom, not standard IRC numerics)
     TENANTS: 'TENANTS',           // Initial tenant list for tenant-aware connections
     TENANTJOIN: 'TENANTJOIN',     // New tenant connected (first user)
     TENANTPART: 'TENANTPART',     // Tenant disconnected (last user)
+
+    // LINKS replies
+    RPL_LINKS: '364',             // Server link
+    RPL_ENDOFLINKS: '365',        // End of LINKS
 
     // Errors
     ERR_NOSUCHNICK: '401',        // No such nick/channel
@@ -120,5 +154,7 @@ export const IRC_REPLIES = {
     ERR_NOTREGISTERED: '451',     // Not registered
     ERR_NEEDMOREPARAMS: '461',    // Need more params
     ERR_ALREADYREGISTERED: '462', // Already registered
+    ERR_NOPRIVILEGES: '481',      // No privileges (for operator commands)
     ERR_CHANOPRIVSNEEDED: '482',  // Channel operator privileges needed
+    ERR_NOOPERHOST: '491',        // No operator host
 } as const;

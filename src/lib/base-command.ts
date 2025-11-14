@@ -24,19 +24,37 @@ export abstract class BaseIrcCommand implements IrcCommandHandler {
     /**
      * Send IRC numeric reply
      * Format: :server.name CODE nickname message
+     * With server-time: @time=2024-01-15T12:30:45.123Z :server.name CODE nickname message
      */
     protected sendReply(connection: IrcConnection, code: string, message: string): void {
         const nick = connection.nickname || '*';
-        const response = `:${this.serverName} ${code} ${nick} ${message}\r\n`;
+        let response = `:${this.serverName} ${code} ${nick} ${message}`;
+
+        // Prepend server-time tag if capability enabled
+        if (connection.capabilities.has('server-time')) {
+            const timestamp = new Date().toISOString();
+            response = `@time=${timestamp} ${response}`;
+        }
+
+        response += '\r\n';
         connection.socket.write(response);
     }
 
     /**
      * Send raw IRC message
      * Format: prefix command params :trailing
+     * With server-time: @time=2024-01-15T12:30:45.123Z prefix command params :trailing
      */
     protected sendMessage(connection: IrcConnection, message: string): void {
-        const response = `${message}\r\n`;
+        let response = message;
+
+        // Prepend server-time tag if capability enabled
+        if (connection.capabilities.has('server-time')) {
+            const timestamp = new Date().toISOString();
+            response = `@time=${timestamp} ${response}`;
+        }
+
+        response += '\r\n';
         connection.socket.write(response);
     }
 

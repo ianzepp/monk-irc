@@ -7,6 +7,7 @@ dist/
 # Environment
 .env
 .env.local
+.env.production
 
 # IDE
 .vscode/
@@ -22,6 +23,8 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+logs/
+*.pid
 
 # Testing
 coverage/
