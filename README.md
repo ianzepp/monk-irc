@@ -281,9 +281,10 @@ JOIN #users/18b4f885-7c54     # Partial UUID
 
 ## IRC Commands Supported
 
-monk-irc implements **20 IRC commands** for full client compatibility:
+monk-irc implements **21 IRC commands** for full client compatibility:
 
 ### Registration & Connection
+- `CAP <subcommand>` - IRCv3 capability negotiation (LS, LIST, REQ, END)
 - `NICK <nickname>` - Set IRC display name
 - `USER <username@tenant> <mode> <servername> :<realname>` - Authenticate to monk-api
 - `PING` - Keepalive (responds with PONG)
@@ -317,6 +318,77 @@ monk-irc implements **20 IRC commands** for full client compatibility:
 ### Server Information
 - `MOTD` - Show Message of the Day (server info, API connection details)
 - `VERSION` - Show server version
+
+## IRCv3 Capability Negotiation
+
+monk-irc implements IRCv3 capability negotiation for advanced features:
+
+### Available Capabilities
+
+**`multi-prefix`** - Standard IRC capability for multiple user prefixes
+
+**`tenant-aware`** - Custom capability for bot service integration
+- Enables tenant-scoped message routing
+- Receives tenant lifecycle notifications
+- Perfect for monk-bot integration
+
+### Capability Flow
+
+```
+Client → CAP LS 302
+Server → :server CAP * LS :multi-prefix tenant-aware
+Client → CAP REQ :tenant-aware
+Server → :server CAP * ACK :tenant-aware
+Server → :server TENANTS monk-bot :legal-firm,acme-corp
+Client → CAP END
+Client → NICK monk-bot
+Client → USER ...
+Server → 001 Welcome (registration completes)
+```
+
+### Tenant-Aware Capability
+
+When a client negotiates the `tenant-aware` capability, it receives:
+
+**1. Tenant Lifecycle Notifications**
+```
+:server TENANTS <nick> :<tenant1>,<tenant2>,<tenant3>
+:server TENANTJOIN <nick> :<tenant>
+:server TENANTPART <nick> :<tenant>
+```
+
+**2. Tenant-Scoped Message Routing**
+
+Messages forwarded to tenant-aware connections include tenant tags:
+```
+:alice!root@legal-firm PRIVMSG #users@legal-firm :@monk show users
+```
+
+Tenant-aware connections can send to specific tenants:
+```
+NOTICE #users@legal-firm :Found 12 users in legal-firm tenant
+```
+
+**3. Tenant Isolation**
+
+Each tenant is completely isolated:
+- Tenant-aware connections see all tenants but messages are scoped
+- Users only receive messages for their tenant
+- Perfect for multi-tenant bot deployments
+
+**Example Bot Flow:**
+```
+# Bot receives tenant-tagged message
+:alice!root@legal-firm PRIVMSG #users@legal-firm :@monk show users
+
+# Bot processes and responds to specific tenant
+NOTICE #users@legal-firm :Found 12 users: alice, bob, carol...
+
+# Only legal-firm users receive the response
+→ alice: :monk-bot!monk-bot@bot NOTICE #users :Found 12 users: alice, bob, carol...
+→ bob@legal-firm: :monk-bot!monk-bot@bot NOTICE #users :Found 12 users: alice, bob, carol...
+→ charlie@acme-corp: (nothing - different tenant)
+```
 
 ## How It Works
 
@@ -367,6 +439,11 @@ interface IrcConnection {
   jwt: string;             // JWT from POST /auth/login
   channels: Set<string>;   // In-memory channel membership
   awayMessage?: string;    // Away status message
+
+  // IRCv3 Capability Negotiation
+  capNegotiating: boolean; // Blocks registration until CAP END
+  capabilities: Set<string>; // Enabled capabilities (e.g., 'tenant-aware')
+  isTenantAware: boolean;  // True if tenant-aware capability enabled
 }
 ```
 
@@ -398,27 +475,41 @@ Different users can connect to different API servers simultaneously.
 
 ## Integration with monk-bot
 
-monk-bot connects as a regular IRC user and provides AI-assisted data operations:
+monk-bot uses the `tenant-aware` capability to receive tenant-scoped messages:
 
 ```irc
-# monk-bot connects
+# monk-bot connects with CAP negotiation
+CAP LS 302
+CAP REQ :tenant-aware
+CAP END
 NICK monk-bot
 USER monk-bot-admin@monk-bot-state 0 dev :AI Assistant
-JOIN #users
+
+# Server sends initial tenant list
+← :server TENANTS monk-bot :legal-firm,acme-corp
+
+# Server notifies of new tenant
+← :server TENANTJOIN monk-bot :startup-inc
 
 # User asks question in schema channel
-alice: show me all active users
+alice@legal-firm: @monk show me all active users
 
-# monk-bot queries monk-api using its JWT
-monk-bot: Found 12 active users: alice, bob, carol, ...
+# monk-bot receives tenant-tagged message
+← :alice!root@legal-firm PRIVMSG #users@legal-firm :@monk show me all active users
 
-# User switches to record-specific channel
-alice: JOIN #users/18b4f885
-alice: update this user's email to new@example.com
+# monk-bot queries monk-api and responds to specific tenant
+→ NOTICE #users@legal-firm :Found 12 active users: alice, bob, carol...
 
-# monk-bot knows context from channel name
-monk-bot: Updated email for Root User to new@example.com
+# Only legal-firm users see the response
+alice@legal-firm: sees response
+bob@acme-corp: doesn't see response (different tenant)
 ```
+
+**Benefits of tenant-aware capability:**
+- monk-bot receives all tenant messages in one connection
+- Tenant tags enable proper message routing
+- Single bot instance serves all tenants
+- Complete tenant isolation maintained
 
 **Why NOTICE is critical for monk-bot:**
 - monk-bot uses `NOTICE` instead of `PRIVMSG` to send responses
@@ -437,7 +528,8 @@ monk-irc/
 │   │   ├── irc-server.ts     # Core server, connection handling
 │   │   ├── base-command.ts   # Base class for commands
 │   │   └── types.ts          # TypeScript interfaces
-│   └── commands/             # IRC command handlers (20 commands)
+│   └── commands/             # IRC command handlers (21 commands)
+│       ├── cap.ts            # CAP - IRCv3 capability negotiation
 │       ├── nick.ts           # NICK - Set nickname
 │       ├── user.ts           # USER - Authenticate to monk-api
 │       ├── join.ts           # JOIN - Join schema/record channels
@@ -655,7 +747,7 @@ Ian Zepp <ian.zepp@protonmail.com>
 
 ---
 
-**Status**: Production Ready - Full IRC bridge with 20 commands, enterprise tenant isolation, and record-specific channels
+**Status**: Production Ready - Full IRC bridge with 21 commands, IRCv3 CAP negotiation, tenant-aware capability, enterprise tenant isolation, and record-specific channels
 
 **monk ecosystem:**
 - [monk-api](../monk-api) - Backend REST API with schema engine
