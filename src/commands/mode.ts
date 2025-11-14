@@ -18,13 +18,26 @@ export class ModeCommand extends BaseIrcCommand {
         const parts = args.split(' ');
         const target = parts[0];
 
-        // Pure bridge - minimal mode support (no persistent modes)
+        // Get tenant and user
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const user = tenant.getUserByConnection(connection);
+        if (!user) return;
+
         if (target.startsWith('#')) {
-            // Channel mode - return default
-            this.sendReply(connection, '324', `${target} +nt`);
-        } else if (target === connection.nickname) {
-            // User mode - return default
-            this.sendReply(connection, '221', '+i');
+            // Channel mode - get from channel or return default
+            const channel = tenant.getChannel(target);
+            if (channel) {
+                const modes = channel.getModes();
+                this.sendReply(connection, '324', `${target} ${modes || '+nt'}`);
+            } else {
+                this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL, `${target} :No such channel`);
+            }
+        } else if (target === user.getNickname()) {
+            // User mode - get from user or return default
+            const modes = user.getModes();
+            this.sendReply(connection, '221', modes || '+i');
         } else {
             this.sendReply(connection, IRC_REPLIES.ERR_UNKNOWNCOMMAND, 'MODE :Command not fully implemented');
         }
