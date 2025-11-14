@@ -17,7 +17,6 @@ export class PartCommand extends BaseIrcCommand {
     async execute(connection: IrcConnection, args: string): Promise<void> {
         const parts = args.trim().split(' ');
         const channelName = parts[0];
-        const partMessage = parts.slice(1).join(' ').replace(/^:/, '') || connection.nickname!;
 
         // Validate channel name provided
         if (!channelName) {
@@ -25,33 +24,48 @@ export class PartCommand extends BaseIrcCommand {
             return;
         }
 
+        // Get tenant and user
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const user = tenant.getUserByConnection(connection);
+        if (!user) return;
+
+        // Get channel
+        const channel = tenant.getChannel(channelName);
+        if (!channel) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
+            return;
+        }
+
         // Check if user is in the channel
-        if (!connection.channels.has(channelName)) {
+        if (!channel.hasMember(user)) {
             this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
             return;
         }
 
         if (this.debug) {
-            console.log(`📍 [${connection.id}] ${connection.nickname} leaving ${channelName}`);
+            console.log(`📍 [${connection.id}] ${user.getNickname()} leaving ${channelName}`);
         }
 
-        // Broadcast PART to channel members (including self)
-        this.server.broadcastToChannel(
-            connection,
-            channelName,
-            `:${this.getUserPrefix(connection)} PART ${channelName} :${partMessage}`
-        );
+        // Build part message
+        const partMessage = parts.slice(1).join(' ').replace(/^:/, '') || user.getNickname();
 
-        // Send PART message to user
-        this.sendMessage(connection, `:${this.getUserPrefix(connection)} PART ${channelName} :${partMessage}`);
+        // Broadcast PART to all channel members (including the parting user)
+        const userPrefix = user.getUserPrefix();
+        channel.broadcast(`:${userPrefix} PART ${channelName} :${partMessage}`);
 
-        // Remove from in-memory channel membership
-        this.server.removeFromChannel(connection, channelName);
+        // Remove user from channel
+        channel.removeMember(user);
+        user.partChannel(channel);
 
-        // Pure bridge - no database persistence
+        // Clean up empty channel
+        if (channel.isEmpty()) {
+            tenant.removeChannel(channelName);
+        }
 
         if (this.debug) {
-            console.log(`✅ [${connection.id}] ${connection.nickname} left ${channelName}`);
+            console.log(`✅ [${connection.id}] ${user.getNickname()} left ${channelName}`);
         }
     }
 }
