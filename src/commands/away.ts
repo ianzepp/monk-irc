@@ -18,38 +18,46 @@ export class AwayCommand extends BaseIrcCommand {
         // Parse: AWAY [:<message>]
         const message = args.trim();
 
+        // Get tenant and user
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const user = tenant.getUserByConnection(connection);
+        if (!user) return;
+
         if (message.startsWith(':')) {
             // Set away with message
-            connection.awayMessage = message.substring(1);
+            const awayMessage = message.substring(1);
+            user.setAway(awayMessage);
             this.sendReply(connection, IRC_REPLIES.RPL_NOWAWAY, ':You have been marked as being away');
 
             // Broadcast to users with away-notify capability
-            this.broadcastAwayStatus(connection);
+            this.broadcastAwayStatus(user, tenant);
 
             if (this.debug) {
-                console.log(`😴 [${connection.id}] ${connection.nickname} is now away: ${connection.awayMessage}`);
+                console.log(`😴 [${connection.id}] ${user.getNickname()} is now away: ${awayMessage}`);
             }
         } else if (message.length > 0) {
             // Message without colon prefix
-            connection.awayMessage = message;
+            user.setAway(message);
             this.sendReply(connection, IRC_REPLIES.RPL_NOWAWAY, ':You have been marked as being away');
 
             // Broadcast to users with away-notify capability
-            this.broadcastAwayStatus(connection);
+            this.broadcastAwayStatus(user, tenant);
 
             if (this.debug) {
-                console.log(`😴 [${connection.id}] ${connection.nickname} is now away: ${connection.awayMessage}`);
+                console.log(`😴 [${connection.id}] ${user.getNickname()} is now away: ${message}`);
             }
         } else {
             // No message - unset away
-            connection.awayMessage = undefined;
+            user.clearAway();
             this.sendReply(connection, IRC_REPLIES.RPL_UNAWAY, ':You are no longer marked as being away');
 
             // Broadcast to users with away-notify capability
-            this.broadcastAwayStatus(connection);
+            this.broadcastAwayStatus(user, tenant);
 
             if (this.debug) {
-                console.log(`👋 [${connection.id}] ${connection.nickname} is back`);
+                console.log(`👋 [${connection.id}] ${user.getNickname()} is back`);
             }
         }
     }
@@ -58,47 +66,39 @@ export class AwayCommand extends BaseIrcCommand {
      * Broadcast AWAY status change to users with away-notify capability
      * who share channels with this user
      */
-    private broadcastAwayStatus(connection: IrcConnection): void {
-        if (!this.server) return;
+    private broadcastAwayStatus(user: any, tenant: any): void {
+        const userPrefix = user.getUserPrefix();
+        const awayMessage = user.getAwayMessage() || '';
 
-        const userPrefix = this.getUserPrefix(connection);
-        const awayMessage = connection.awayMessage || '';
-
-        // Get all connections in the same tenant who share channels
-        const connections = this.server.getConnections() as IrcConnection[];
+        // Get all users in the same tenant
+        const allUsers = tenant.getUsers();
         const notifiedUsers = new Set<string>();
 
-        for (const targetConn of connections) {
+        for (const targetUser of allUsers) {
             // Skip self, unregistered, or users without away-notify capability
-            if (targetConn.id === connection.id ||
-                !targetConn.registered ||
-                !targetConn.capabilities.has('away-notify')) {
-                continue;
-            }
-
-            // Skip if different tenant (tenant isolation)
-            if (targetConn.tenant !== connection.tenant) {
+            if (targetUser === user ||
+                !targetUser.isRegistered() ||
+                !targetUser.hasCapability('away-notify')) {
                 continue;
             }
 
             // Check if they share any channels
-            const sharedChannels = Array.from(connection.channels).filter(ch =>
-                targetConn.channels.has(ch)
-            );
+            const sharedChannels = user.getSharedChannels(targetUser);
 
-            if (sharedChannels.length > 0 && !notifiedUsers.has(targetConn.id)) {
+            if (sharedChannels.length > 0 && !notifiedUsers.has(targetUser.getId())) {
                 // Send AWAY notification
                 if (awayMessage) {
                     // User is now away
-                    this.sendMessage(targetConn, `:${userPrefix} AWAY :${awayMessage}`);
+                    targetUser.sendMessage(`:${userPrefix} AWAY :${awayMessage}`);
                 } else {
                     // User is no longer away
-                    this.sendMessage(targetConn, `:${userPrefix} AWAY`);
+                    targetUser.sendMessage(`:${userPrefix} AWAY`);
                 }
-                notifiedUsers.add(targetConn.id);
+                notifiedUsers.add(targetUser.getId());
 
                 if (this.debug) {
-                    console.log(`📢 [${targetConn.id}] Notified ${targetConn.nickname} of ${connection.nickname}'s away status`);
+                    const conn = targetUser.getConnection();
+                    console.log(`📢 [${conn?.id}] Notified ${targetUser.getNickname()} of ${user.getNickname()}'s away status`);
                 }
             }
         }
