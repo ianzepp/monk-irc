@@ -16,16 +16,36 @@ export class QuitCommand extends BaseIrcCommand {
     async execute(connection: IrcConnection, args: string): Promise<void> {
         const quitMessage = args.startsWith(':') ? args.substring(1) : args || 'Client quit';
 
-        if (this.debug) {
-            console.log(`👋 [${connection.id}] ${connection.nickname || 'Unknown'} quit: ${quitMessage}`);
+        // Get tenant and user
+        const tenant = this.server.getTenantForConnection(connection);
+        if (tenant) {
+            const user = tenant.getUserByConnection(connection);
+            if (user) {
+                if (this.debug) {
+                    console.log(`👋 [${connection.id}] ${user.getNickname()} quit: ${quitMessage}`);
+                }
+
+                // Broadcast QUIT to all channels the user is in
+                const quitMsg = `:${user.getUserPrefix()} QUIT :${quitMessage}`;
+                const channels = user.getChannels();
+
+                for (const channel of channels) {
+                    // Broadcast to all members except the quitting user
+                    channel.broadcast(quitMsg, user);
+                }
+
+                // Send ERROR message to client
+                this.sendMessage(connection, `ERROR :Closing connection: ${quitMessage}`);
+
+                // Close the connection
+                connection.socket.end();
+                return;
+            }
         }
 
-        // Broadcast QUIT to all channels the user is in
-        if (connection.nickname) {
-            const quitMsg = `:${this.getUserPrefix(connection)} QUIT :${quitMessage}`;
-            for (const channelName of connection.channels) {
-                this.server.broadcastToChannel(channelName, quitMsg, connection);
-            }
+        // Fallback for users not fully registered
+        if (this.debug) {
+            console.log(`👋 [${connection.id}] ${connection.nickname || 'Unknown'} quit: ${quitMessage}`);
         }
 
         // Send ERROR message to client
