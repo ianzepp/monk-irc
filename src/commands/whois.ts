@@ -26,37 +26,46 @@ export class WhoisCommand extends BaseIrcCommand {
             console.log(`🔍 [${connection.id}] ${connection.nickname} requesting WHOIS for ${nickname}`);
         }
 
-        // Find the user
-        const targetConnection = this.server.getConnectionByNickname(nickname);
+        // Get tenant and requesting user
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
 
-        if (!targetConnection) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${nickname} :No such nick/channel`);
+        // Find the target user in the same tenant
+        const targetUser = tenant.getUserByNickname(nickname);
+
+        if (!targetUser) {
+            this.sendNoSuchNick(connection, nickname);
             this.sendReply(connection, IRC_REPLIES.RPL_ENDOFWHOIS, `${nickname} :End of WHOIS list`);
             return;
         }
 
-        // Check if target is in the same tenant (tenant isolation)
-        if (targetConnection.tenant !== connection.tenant) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${nickname} :No such nick/channel`);
-            this.sendReply(connection, IRC_REPLIES.RPL_ENDOFWHOIS, `${nickname} :End of WHOIS list`);
-            return;
-        }
+        // Build and send WHOIS information using User class
+        this.sendWhoisInfo(connection, targetUser, nickname);
 
+        if (this.debug) {
+            console.log(`🔍 [${connection.id}] WHOIS completed for ${nickname}`);
+        }
+    }
+
+    /**
+     * Send complete WHOIS information for a user
+     */
+    private sendWhoisInfo(connection: IrcConnection, targetUser: any, nickname: string): void {
         // RPL_WHOISUSER (311): "<nick> <user> <host> * :<real name>"
         this.sendReply(
             connection,
             IRC_REPLIES.RPL_WHOISUSER,
-            `${targetConnection.nickname} ${targetConnection.username || '~user'} ${targetConnection.hostname} * :${targetConnection.realname || 'Unknown'}`
+            `${targetUser.getNickname()} ${targetUser.getUsername()} ${targetUser.getHostname()} * :${targetUser.getRealname()}`
         );
 
         // RPL_WHOISCHANNELS (319): "<nick> :[prefix]<channel> [prefix]<channel> ..."
         // Show channels the user is in
-        if (targetConnection.channels.size > 0) {
-            const channels = Array.from(targetConnection.channels).join(' ');
+        const channels = targetUser.getChannelNames();
+        if (channels.length > 0) {
             this.sendReply(
                 connection,
                 '319',
-                `${targetConnection.nickname} :${channels}`
+                `${targetUser.getNickname()} :${channels.join(' ')}`
             );
         }
 
@@ -64,31 +73,28 @@ export class WhoisCommand extends BaseIrcCommand {
         this.sendReply(
             connection,
             '312',
-            `${targetConnection.nickname} ${this.serverName} :monk-irc server`
+            `${targetUser.getNickname()} ${this.serverName} :monk-irc server`
         );
 
-        // RPL_WHOISIDLE (317): "<nick> <integer> :seconds idle"
-        const idleSeconds = Math.floor((Date.now() - targetConnection.lastActivity.getTime()) / 1000);
+        // RPL_WHOISIDLE (317): "<nick> <integer> <signon> :seconds idle, signon time"
+        const idleSeconds = targetUser.getIdleSeconds();
+        const signonTime = Math.floor(targetUser.getConnectedAt().getTime() / 1000);
         this.sendReply(
             connection,
             '317',
-            `${targetConnection.nickname} ${idleSeconds} ${Math.floor(targetConnection.connectedAt.getTime() / 1000)} :seconds idle, signon time`
+            `${targetUser.getNickname()} ${idleSeconds} ${signonTime} :seconds idle, signon time`
         );
 
         // RPL_AWAY (301): "<nick> :<away message>" - show if user is away
-        if (targetConnection.awayMessage) {
+        if (targetUser.isAway()) {
             this.sendReply(
                 connection,
                 IRC_REPLIES.RPL_AWAY,
-                `${targetConnection.nickname} :${targetConnection.awayMessage}`
+                `${targetUser.getNickname()} :${targetUser.getAwayMessage()}`
             );
         }
 
         // RPL_ENDOFWHOIS (318): "<nick> :End of WHOIS list"
         this.sendReply(connection, IRC_REPLIES.RPL_ENDOFWHOIS, `${nickname} :End of WHOIS list`);
-
-        if (this.debug) {
-            console.log(`🔍 [${connection.id}] WHOIS completed for ${nickname}`);
-        }
     }
 }
