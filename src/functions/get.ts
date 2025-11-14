@@ -7,8 +7,8 @@ import type { ServerConfig } from '../lib/types.js';
 
 export class GetFunction extends BaseFunction {
     readonly name = 'get';
-    readonly description = 'Fetch a specific record by ID';
-    readonly usage = '!get <id> [--fields field1,field2]';
+    readonly description = 'Get specific field(s) from a record';
+    readonly usage = '!get <id> [--fields fields] (schema) or !get [field...] (record)';
     readonly requiresSchema = true;
 
     constructor(config: ServerConfig, server: any) {
@@ -22,15 +22,34 @@ export class GetFunction extends BaseFunction {
             return;
         }
 
-        // Parse arguments
-        const recordId = args[0];
-        if (!recordId || recordId.startsWith('--')) {
-            this.sendNoticeToSender(sender, channel, 'Usage: !get <id> [--fields field1,field2]');
-            return;
-        }
+        // Determine record ID and fields based on context
+        const isRecordChannel = channel.isRecordChannel();
+        let recordId: string;
+        let fields: string[] | undefined;
 
-        const argsStr = args.slice(1).join(' ');
-        const fields = this.parseFields(argsStr);
+        if (isRecordChannel) {
+            // In record channel: use current record, args are field names
+            recordId = channel.getRecordId();
+            if (!recordId) {
+                this.sendNoticeToSender(sender, channel, 'Failed to determine record ID from channel');
+                return;
+            }
+
+            // All args are fields (no --fields flag needed)
+            if (args.length > 0) {
+                fields = args;
+            }
+        } else {
+            // In schema channel: first arg is ID, then optional --fields
+            recordId = args[0];
+            if (!recordId || recordId.startsWith('--')) {
+                this.sendNoticeToSender(sender, channel, 'Usage: !get <id> [--fields field1,field2]');
+                return;
+            }
+
+            const argsStr = args.slice(1).join(' ');
+            fields = this.parseFields(argsStr);
+        }
 
         if (this.debug) {
             console.log(`📄 [${sender.getNickname()}] !get ${recordId} in ${schema}`);

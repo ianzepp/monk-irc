@@ -8,7 +8,7 @@ import type { ServerConfig } from '../lib/types.js';
 export class ShowFunction extends BaseFunction {
     readonly name = 'show';
     readonly description = 'Display detailed record information';
-    readonly usage = '!show <id>';
+    readonly usage = '!show <id> (schema) or !show (record)';
     readonly requiresSchema = true;
 
     constructor(config: ServerConfig, server: any) {
@@ -22,11 +22,24 @@ export class ShowFunction extends BaseFunction {
             return;
         }
 
-        // Parse arguments
-        const recordId = args[0];
-        if (!recordId) {
-            this.sendNoticeToSender(sender, channel, 'Usage: !show <id>');
-            return;
+        // Determine record ID: from args or from channel context
+        const isRecordChannel = channel.isRecordChannel();
+        let recordId: string;
+
+        if (isRecordChannel) {
+            // In record channel: use current record (args ignored)
+            recordId = channel.getRecordId();
+            if (!recordId) {
+                this.sendNoticeToSender(sender, channel, 'Failed to determine record ID from channel');
+                return;
+            }
+        } else {
+            // In schema channel: require ID argument
+            recordId = args[0];
+            if (!recordId) {
+                this.sendNoticeToSender(sender, channel, 'Usage: !show <id>');
+                return;
+            }
         }
 
         if (this.debug) {

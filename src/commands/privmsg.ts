@@ -121,12 +121,18 @@ export class PrivmsgCommand extends BaseIrcCommand {
             return;
         }
 
-        // Check if function is schema-only (not available in record channels)
+        // Check context-specific availability
         const isRecordChannel = channel.isRecordChannel();
-        const schemaOnlyFunctions = ['find', 'list', 'count', 'show', 'open', 'get'];
+        const schemaOnlyFunctions = ['find', 'list', 'count', 'open'];
+        const recordOnlyFunctions = ['set', 'unset', 'refresh'];
 
         if (isRecordChannel && schemaOnlyFunctions.includes(functionName)) {
-            sender.sendMessage(`:server NOTICE ${channel.getName()} :!${functionName} is not available in record channels`);
+            sender.sendMessage(`:server NOTICE ${channel.getName()} :!${functionName} is only available in schema channels`);
+            return;
+        }
+
+        if (!isRecordChannel && recordOnlyFunctions.includes(functionName)) {
+            sender.sendMessage(`:server NOTICE ${channel.getName()} :!${functionName} is only available in record channels`);
             return;
         }
 

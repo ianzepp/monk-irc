@@ -32,50 +32,46 @@ export class HelpFunction extends BaseFunction {
         const allFunctions = registry.getAll();
         const isRecordChannel = channel.isRecordChannel();
 
+        // Define which functions are available in each context
+        const schemaOnlyFunctions = ['find', 'list', 'count', 'open'];
+        const recordOnlyFunctions = ['set', 'unset', 'refresh'];
+        const bothContextFunctions = ['help', 'show', 'get'];
+
         // Filter functions based on channel type
         const availableFunctions = allFunctions.filter((func: any) => {
-            // Help is always available
-            if (func.name === 'help') {
+            // Functions available in both contexts
+            if (bothContextFunctions.includes(func.name)) {
                 return true;
             }
 
-            // Record channels: only certain functions make sense
+            // Record channels: only record-specific functions
             if (isRecordChannel) {
-                // Currently no record-specific functions, but help is always available
-                return false;
+                return recordOnlyFunctions.includes(func.name);
             }
 
-            // Schema channels: all functions except help (already included)
-            return func.name !== 'help';
+            // Schema channels: schema-specific functions (both-context already included)
+            return schemaOnlyFunctions.includes(func.name);
         });
+
+        this.sendNotice(channel, 'Available functions:');
+
+        // Sort functions for display
+        const sortedFunctions = availableFunctions.sort((a: any, b: any) => a.name.localeCompare(b.name));
+
+        for (const func of sortedFunctions) {
+            this.sendNotice(channel, `  !${func.name} - ${func.description}`);
+        }
 
         if (isRecordChannel) {
             const schema = channel.getSchemaName();
             const recordId = channel.getRecordId();
-            this.sendNotice(channel, `Record channel: ${schema}/${recordId}`);
-
-            if (availableFunctions.length === 0) {
-                this.sendNotice(channel, 'No functions available in record channels yet');
-                this.sendNotice(channel, 'Use normal IRC commands or discuss the record here');
-            } else {
-                this.sendNotice(channel, 'Available functions:');
-                for (const func of availableFunctions) {
-                    this.sendNotice(channel, `  !${func.name} - ${func.description}`);
-                }
-            }
+            this.sendNotice(channel, `Context: record ${schema}/${recordId}`);
         } else {
-            // Schema channel
-            this.sendNotice(channel, 'Available functions:');
-
-            // Always show help first
-            this.sendNotice(channel, '  !help - List available functions');
-
-            for (const func of availableFunctions) {
-                this.sendNotice(channel, `  !${func.name} - ${func.description}`);
-            }
-
-            this.sendNotice(channel, 'Use !help <function> for details');
+            const schema = channel.getSchemaName();
+            this.sendNotice(channel, `Context: schema ${schema}`);
         }
+
+        this.sendNotice(channel, 'Use !help <function> for details');
     }
 
     private async showFunctionHelp(channel: any, functionName: string): Promise<void> {
