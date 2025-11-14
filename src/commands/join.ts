@@ -81,9 +81,11 @@ export class JoinCommand extends BaseIrcCommand {
                 return;
             }
 
-            // Add user to channel (first user becomes operator)
-            const isFirstMember = channel.isEmpty();
-            channel.addMember(user, isFirstMember ? new Set([ChannelMode.OPERATOR]) : new Set());
+            // Determine user's role based on API access level
+            const roles = await this.getUserRolesForChannel(connection, channelName, channel.isEmpty());
+
+            // Add user to channel with appropriate roles
+            channel.addMember(user, roles);
             user.joinChannel(channel);
 
             // Send JOIN message to user (extended format if they have the capability)
@@ -100,8 +102,8 @@ export class JoinCommand extends BaseIrcCommand {
             this.broadcastJoin(channel, user);
 
             if (this.debug) {
-                const opStatus = isFirstMember ? ' (operator)' : '';
-                console.log(`✅ [${connection.id}] ${user.getNickname()} joined ${channelName}${opStatus}${schemaInfo ? ' ' + schemaInfo : ''}`);
+                const roleList = Array.from(roles).join(', ') || 'none';
+                console.log(`✅ [${connection.id}] ${user.getNickname()} joined ${channelName} (roles: ${roleList})${schemaInfo ? ' ' + schemaInfo : ''}`);
             }
 
         } catch (error) {
@@ -110,6 +112,75 @@ export class JoinCommand extends BaseIrcCommand {
                 console.error(`❌ Failed to join channel ${channelName}:`, error);
             }
         }
+    }
+
+    /**
+     * Determine user's channel roles based on API access level
+     * Maps API access levels to IRC channel modes:
+     * - root/full → Operator (@)
+     * - edit → Voice (+)
+     * - read → Regular member (no prefix)
+     */
+    private async getUserRolesForChannel(
+        connection: IrcConnection,
+        channelName: string,
+        isFirstMember: boolean
+    ): Promise<Set<ChannelMode>> {
+        const roles = new Set<ChannelMode>();
+
+        // First user in channel always gets operator (channel creator)
+        if (isFirstMember) {
+            roles.add(ChannelMode.OPERATOR);
+            return roles;
+        }
+
+        // Get schema name from channel
+        const schemaName = this.getSchemaFromChannel(channelName);
+        if (!schemaName) {
+            // Non-schema channels get no special roles
+            return roles;
+        }
+
+        try {
+            // Query user's access level for this schema
+            const response = await this.apiRequest(connection, `/api/describe/schema/${schemaName}`);
+
+            if (!response.ok) {
+                // If we can't determine access, give no special roles
+                return roles;
+            }
+
+            const result = await response.json() as {
+                success?: boolean;
+                data?: {
+                    access?: string;
+                    permissions?: { write?: boolean; delete?: boolean };
+                };
+            };
+
+            const access = result.data?.access;
+            const permissions = result.data?.permissions;
+
+            // Map access level to channel roles
+            if (access === 'root' || access === 'full') {
+                // Full access → Operator
+                roles.add(ChannelMode.OPERATOR);
+            } else if (access === 'edit' || permissions?.write || permissions?.delete) {
+                // Edit access → Voice
+                roles.add(ChannelMode.VOICE);
+            }
+            // read access → no special roles
+
+            if (this.debug && roles.size > 0) {
+                console.log(`🎭 [${connection.id}] User has ${access} access to ${schemaName} → roles: ${Array.from(roles).join(', ')}`);
+            }
+
+        } catch (error) {
+            console.error(`⚠️  Failed to fetch access level for ${schemaName}:`, error);
+            // On error, give no special roles
+        }
+
+        return roles;
     }
 
     /**
