@@ -39,8 +39,8 @@ export interface IrcConnection {
 
     // CAP Negotiation (IRCv3)
     capNegotiating: boolean;           // true during CAP negotiation, blocks registration
-    capabilities: Set<string>;         // enabled capabilities (e.g., 'monk-bot-service')
-    isBotService: boolean;             // true if monk-bot-service capability enabled
+    capabilities: Set<string>;         // enabled capabilities (e.g., 'tenant-aware')
+    isBotService: boolean;             // true if tenant-aware capability enabled
 }
 
 export interface IrcCommandHandler {

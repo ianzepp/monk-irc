@@ -136,7 +136,12 @@ export class UserCommand extends BaseIrcCommand {
     }
 
     private checkRegistration(connection: IrcConnection): void {
-        // Registration is complete when we have both NICK, USER, and successful authentication
+        // Block registration if CAP negotiating
+        if (connection.capNegotiating) {
+            return; // Wait for CAP END
+        }
+
+        // Registration is complete when we have NICK, USER, and successful authentication
         if (connection.nickname && connection.username && connection.jwt && !connection.registered) {
             this.completeRegistration(connection).catch(err => {
                 console.error(`❌ Failed to complete registration for ${connection.nickname}:`, err);

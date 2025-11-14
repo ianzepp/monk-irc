@@ -56,6 +56,7 @@ export class IrcServer {
     private async loadCommandHandlers(): Promise<void> {
         // Load command handlers
         try {
+            const { CapCommand } = await import('../commands/cap.js');
             const { NickCommand } = await import('../commands/nick.js');
             const { UserCommand } = await import('../commands/user.js');
             const { PingCommand } = await import('../commands/ping.js');
@@ -78,6 +79,7 @@ export class IrcServer {
             const { MotdCommand } = await import('../commands/motd.js');
 
             // Register commands (pass server instance for methods like registerNickname, channel management)
+            this.registerCommand(new CapCommand(this.config, this));
             this.registerCommand(new NickCommand(this.config, this));
             this.registerCommand(new UserCommand(this.config, this));
             this.registerCommand(new PingCommand(this.config));
