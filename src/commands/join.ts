@@ -67,6 +67,9 @@ export class JoinCommand extends BaseIrcCommand {
                 if (this.debug) {
                     console.log(`⚠️  [${connection.id}] ${user.getNickname()} already in ${channelName}`);
                 }
+                // User is already in channel - just send channel info (topic and names)
+                this.sendTopic(connection, channel, schemaInfo);
+                this.sendNames(connection, channel);
                 return;
             }
 
