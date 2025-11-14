@@ -110,8 +110,15 @@ export class JoinCommand extends BaseIrcCommand {
             // Send JOIN message to user
             this.sendMessage(connection, `:${this.getUserPrefix(connection)} JOIN ${channelName}`);
 
-            // Send topic with schema/record info
-            if (schemaInfo && parsed) {
+            // Send topic - check for in-memory topic first, then fall back to schema/record info
+            const tenant = this.server.getTenantForConnection(connection);
+            const inMemoryTopic = tenant?.getChannelTopic(channelName);
+
+            if (inMemoryTopic) {
+                // In-memory topic takes precedence
+                this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :${inMemoryTopic}`);
+            } else if (schemaInfo && parsed) {
+                // Fall back to schema/record info
                 const { schema, recordId } = parsed;
                 if (recordId) {
                     this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :Record context: ${schema}/${recordId}${schemaInfo}`);

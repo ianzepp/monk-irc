@@ -17,6 +17,9 @@ export class Tenant {
     // All active connections for this tenant
     private connections = new Set<IrcConnection>();
 
+    // In-memory channel topics (channel name → topic string)
+    private channelTopics = new Map<string, string>();
+
     // Tenant metadata
     private createdAt: Date;
     private lastActivity: Date;
@@ -108,6 +111,26 @@ export class Tenant {
                 member.socket.write(`${message}\r\n`);
             }
         }
+    }
+
+    // Topic management
+
+    public setChannelTopic(channelName: string, topic: string): void {
+        this.channelTopics.set(channelName, topic);
+        this.updateActivity();
+    }
+
+    public getChannelTopic(channelName: string): string | undefined {
+        return this.channelTopics.get(channelName);
+    }
+
+    public hasChannelTopic(channelName: string): boolean {
+        return this.channelTopics.has(channelName);
+    }
+
+    public clearChannelTopic(channelName: string): void {
+        this.channelTopics.delete(channelName);
+        this.updateActivity();
     }
 
     // Metadata
