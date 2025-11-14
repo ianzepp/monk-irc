@@ -26,7 +26,6 @@ export class KickCommand extends BaseIrcCommand {
         const channelName = parts[0];
         const targetNick = parts[1];
         const reasonIndex = args.indexOf(':');
-        const reason = reasonIndex > -1 ? args.substring(reasonIndex + 1) : `Kicked by ${connection.nickname}`;
 
         // Validate channel name
         if (!this.isValidChannelName(channelName)) {
@@ -34,51 +33,81 @@ export class KickCommand extends BaseIrcCommand {
             return;
         }
 
+        // Get tenant, kicker user, and channel
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const kicker = tenant.getUserByConnection(connection);
+        if (!kicker) return;
+
+        const channel = tenant.getChannel(channelName);
+        if (!channel) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
+            return;
+        }
+
         // Check if kicker is in the channel
-        if (!connection.channels.has(channelName)) {
+        if (!channel.hasMember(kicker)) {
             this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
             return;
         }
 
         // Find target user
-        const targetConnection = this.server.getConnectionByNickname(targetNick);
-        if (!targetConnection) {
+        const targetUser = tenant.getUserByNickname(targetNick);
+        if (!targetUser) {
             this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${targetNick} :No such nick`);
             return;
         }
 
         // Check if target is in the channel
-        if (!targetConnection.channels.has(channelName)) {
+        if (!channel.hasMember(targetUser)) {
             this.sendReply(connection, IRC_REPLIES.ERR_USERNOTINCHANNEL, `${targetNick} ${channelName} :They aren't on that channel`);
             return;
         }
 
-        // Check permissions via API (if channel maps to schema)
-        const schemaName = this.getSchemaFromChannel(channelName);
-        if (schemaName) {
-            try {
-                const hasPermission = await this.checkKickPermission(connection, schemaName);
-                if (!hasPermission) {
+        // Check if kicker has permission (using Channel class)
+        if (!channel.canKick(kicker)) {
+            // Also check permissions via API (if channel maps to schema)
+            const schemaName = this.getSchemaFromChannel(channelName);
+            if (schemaName) {
+                try {
+                    const hasPermission = await this.checkKickPermission(connection, schemaName);
+                    if (!hasPermission) {
+                        this.sendReply(connection, IRC_REPLIES.ERR_CHANOPRIVSNEEDED,
+                            `${channelName} :You don't have permission to kick users (requires edit or full access to ${schemaName})`);
+                        return;
+                    }
+                } catch (error) {
+                    console.error(`⚠️  Permission check failed for ${schemaName}:`, error);
+                    // Deny kick on permission check failure
                     this.sendReply(connection, IRC_REPLIES.ERR_CHANOPRIVSNEEDED,
-                        `${channelName} :You don't have permission to kick users (requires edit or full access to ${schemaName})`);
+                        `${channelName} :You're not a channel operator`);
                     return;
                 }
-            } catch (error) {
-                console.error(`⚠️  Permission check failed for ${schemaName}:`, error);
-                // Allow kick on API error (degraded mode)
+            } else {
+                this.sendReply(connection, IRC_REPLIES.ERR_CHANOPRIVSNEEDED,
+                    `${channelName} :You're not a channel operator`);
+                return;
             }
         }
 
-        // Perform the kick
-        this.server.removeFromChannel(targetConnection, channelName);
+        const reason = reasonIndex > -1 ? args.substring(reasonIndex + 1) : `Kicked by ${kicker.getNickname()}`;
 
-        // Broadcast KICK message to all channel members (including kicked user before they're removed from routing)
-        const kickMsg = `:${this.getUserPrefix(connection)} KICK ${channelName} ${targetNick} :${reason}`;
-        this.server.broadcastToChannel(connection, channelName, kickMsg);
-        targetConnection.socket.write(`${kickMsg}\r\n`);
+        // Broadcast KICK message to all channel members (including kicked user)
+        const kickMsg = `:${kicker.getUserPrefix()} KICK ${channelName} ${targetNick} :${reason}`;
+        channel.broadcast(kickMsg);
+
+        // Remove user from channel
+        channel.removeMember(targetUser);
+        targetUser.partChannel(channel);
+
+        // Clean up empty channel
+        if (channel.isEmpty()) {
+            tenant.removeChannel(channelName);
+        }
 
         if (this.debug) {
-            console.log(`👢 [${connection.id}] ${connection.nickname} kicked ${targetNick} from ${channelName}: ${reason}`);
+            console.log(`👢 [${connection.id}] ${kicker.getNickname()} kicked ${targetNick} from ${channelName}: ${reason}`);
         }
     }
 
