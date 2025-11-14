@@ -121,7 +121,7 @@ export class IrcServer {
             this.registerCommand(new OperCommand(this.config));
             this.registerCommand(new KillCommand(this.config));
             this.registerCommand(new RehashCommand(this.config));
-            this.registerCommand(new WallopsCommand(this.config));
+            this.registerCommand(new WallopsCommand(this.config, this));
             this.registerCommand(new LinksCommand(this.config));
 
             if (this.config.debug) {
