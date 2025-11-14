@@ -38,8 +38,11 @@ export class FindFunction extends BaseFunction {
             if (Object.keys(where).length > 0) {
                 queryBody.where = where;
             }
+            if (fields && fields.length > 0) {
+                queryBody.select = fields;
+            }
 
-            const response = await this.apiRequest(conn, `/api/data/${schema}`, {
+            const response = await this.apiRequest(conn, `/api/find/${schema}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(queryBody)
