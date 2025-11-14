@@ -76,6 +76,12 @@ export class PrivmsgCommand extends BaseIrcCommand {
             return;
         }
 
+        // Check for function invocation (! prefix)
+        if (message.startsWith('!')) {
+            await this.dispatchFunction(sender, channel, message);
+            return;
+        }
+
         // Broadcast message to channel (Channel class handles excluding sender)
         const userPrefix = sender.getUserPrefix();
         channel.broadcast(`:${userPrefix} PRIVMSG ${channelName} :${message}`, sender);
@@ -84,6 +90,46 @@ export class PrivmsgCommand extends BaseIrcCommand {
         const senderConn = sender.getConnection();
         if (senderConn?.tenant) {
             this.forwardToTenantAware(senderConn, channelName, message);
+        }
+    }
+
+    /**
+     * Dispatch function invocation to registered function handler
+     */
+    private async dispatchFunction(
+        sender: any,
+        channel: any,
+        message: string
+    ): Promise<void> {
+        const parts = message.substring(1).split(' ');
+        const functionName = parts[0].toLowerCase();
+        const args = parts.slice(1);
+
+        if (this.debug) {
+            console.log(`⚡ [${sender.getNickname()}] Function: !${functionName} ${args.join(' ')}`);
+        }
+
+        const func = this.server.getFunction(functionName);
+        if (!func) {
+            sender.sendMessage(`:server NOTICE ${channel.getName()} :Unknown function: ${functionName} (try !help)`);
+            return;
+        }
+
+        // Check if function requires schema channel
+        if (func.requiresSchema && !channel.getSchemaName()) {
+            sender.sendMessage(`:server NOTICE ${channel.getName()} :!${functionName} requires a schema channel`);
+            return;
+        }
+
+        try {
+            await func.executeFunction(sender, channel, args);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            sender.sendMessage(`:server NOTICE ${channel.getName()} :Function failed: ${message}`);
+
+            if (this.debug) {
+                console.error(`❌ Function error:`, error);
+            }
         }
     }
 

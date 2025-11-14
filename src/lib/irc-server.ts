@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import type { IrcConnection, IrcCommandHandler, ServerConfig } from './types.js';
 import { IRC_REPLIES } from './types.js';
 import { Tenant } from './tenant.js';
+import { FunctionRegistry } from '../functions/function-registry.js';
 
 export class IrcServer {
     private server: net.Server;
@@ -18,14 +19,16 @@ export class IrcServer {
     private tenants = new Map<string, Tenant>();
     private commandHandlers = new Map<string, IrcCommandHandler>();
     private tenantAwareConnections = new Set<IrcConnection>();
+    private functionRegistry = new FunctionRegistry();
 
     constructor(private config: ServerConfig) {
         this.server = net.createServer(this.handleConnection.bind(this));
     }
 
     async start(): Promise<void> {
-        // Load command handlers first
+        // Load command handlers and functions
         await this.loadCommandHandlers();
+        await this.loadFunctions();
 
         return new Promise((resolve, reject) => {
             this.server.listen(this.config.port, this.config.host, () => {
@@ -142,6 +145,37 @@ export class IrcServer {
         if (this.config.debug) {
             console.log(`✅ Registered command: ${handler.name}`);
         }
+    }
+
+    private async loadFunctions(): Promise<void> {
+        // Load in-channel functions (!commands)
+        try {
+            const { HelpFunction } = await import('../functions/help.js');
+            const { FindFunction } = await import('../functions/find.js');
+            const { CountFunction } = await import('../functions/count.js');
+            const { GetFunction } = await import('../functions/get.js');
+
+            // Register functions
+            this.functionRegistry.register(new HelpFunction(this.config, this));
+            this.functionRegistry.register(new FindFunction(this.config, this));
+            this.functionRegistry.register(new CountFunction(this.config, this));
+            this.functionRegistry.register(new GetFunction(this.config, this));
+
+            if (this.config.debug) {
+                console.log(`⚡ Functions loaded: ${this.functionRegistry.getAll().length}`);
+            }
+        } catch (error) {
+            console.error('❌ Failed to load functions:', error);
+            throw error;
+        }
+    }
+
+    getFunction(name: string): any {
+        return this.functionRegistry.get(name);
+    }
+
+    getFunctionRegistry(): FunctionRegistry {
+        return this.functionRegistry;
     }
 
     private handleConnection(socket: net.Socket): void {
