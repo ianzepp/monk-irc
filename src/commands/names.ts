@@ -32,27 +32,30 @@ export class NamesCommand extends BaseIrcCommand {
             console.log(`📋 [${connection.id}] ${connection.nickname} requesting NAMES for ${channelName}`);
         }
 
-        // Get channel members from in-memory state
-        const members = this.server.getChannelMembers(connection, channelName);
-        
-        if (members.length === 0) {
+        // Get tenant and channel
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const channel = tenant.getChannel(channelName);
+
+        if (!channel || channel.isEmpty()) {
             // Channel doesn't exist or has no members
             this.sendReply(connection, IRC_REPLIES.RPL_ENDOFNAMES, `${channelName} :End of /NAMES list`);
             return;
         }
 
-        // Build names list
-        const memberNicks = members.map((m: IrcConnection) => m.nickname).join(' ');
+        // Build names list with roles (using Channel class)
+        const memberList = channel.getMemberListWithRoles();
 
         // Send RPL_NAMREPLY (353) - Format: "= #channel :nick1 nick2 nick3"
         // The "=" indicates a public channel
-        this.sendReply(connection, IRC_REPLIES.RPL_NAMREPLY, `= ${channelName} :${memberNicks}`);
-        
+        this.sendReply(connection, IRC_REPLIES.RPL_NAMREPLY, `= ${channelName} :${memberList}`);
+
         // Send RPL_ENDOFNAMES (366)
         this.sendReply(connection, IRC_REPLIES.RPL_ENDOFNAMES, `${channelName} :End of /NAMES list`);
 
         if (this.debug) {
-            console.log(`📋 [${connection.id}] NAMES for ${channelName}: ${memberNicks}`);
+            console.log(`📋 [${connection.id}] NAMES for ${channelName}: ${memberList}`);
         }
     }
 }
