@@ -157,6 +157,9 @@ export class IrcServer {
             const { ShowFunction } = await import('../functions/show.js');
             const { OpenFunction } = await import('../functions/open.js');
             const { ListFunction } = await import('../functions/list.js');
+            const { SetFunction } = await import('../functions/set.js');
+            const { UnsetFunction } = await import('../functions/unset.js');
+            const { RefreshFunction } = await import('../functions/refresh.js');
 
             // Register functions
             this.functionRegistry.register(new HelpFunction(this.config, this));
@@ -166,6 +169,9 @@ export class IrcServer {
             this.functionRegistry.register(new ShowFunction(this.config, this));
             this.functionRegistry.register(new OpenFunction(this.config, this));
             this.functionRegistry.register(new ListFunction(this.config, this));
+            this.functionRegistry.register(new SetFunction(this.config, this));
+            this.functionRegistry.register(new UnsetFunction(this.config, this));
+            this.functionRegistry.register(new RefreshFunction(this.config, this));
 
             if (this.config.debug) {
                 console.log(`⚡ Functions loaded: ${this.functionRegistry.getAll().length}`);
