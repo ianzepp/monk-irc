@@ -17,6 +17,15 @@ export interface ChannelTopicInfo {
     setAt?: Date;
 }
 
+export interface SchemaMetadata {
+    totalRecords: number;
+    oldestCreated?: Date;
+    newestCreated?: Date;
+    lastUpdated?: Date;
+    statusBreakdown?: Record<string, number>;
+    fetchedAt: Date;
+}
+
 export class Channel {
     private readonly name: string;
     private readonly tenant: Tenant;
@@ -28,6 +37,7 @@ export class Channel {
     private readonly createdAt: Date;
     private readonly createdBy: string;
     private key?: string; // Channel password (+k mode)
+    private schemaMetadata?: SchemaMetadata; // Aggregate data from monk-api
 
     constructor(name: string, tenant: Tenant, createdBy: string) {
         this.name = name;
@@ -288,6 +298,14 @@ export class Channel {
 
     isEmpty(): boolean {
         return this.members.size === 0;
+    }
+
+    setSchemaMetadata(metadata: SchemaMetadata): void {
+        this.schemaMetadata = metadata;
+    }
+
+    getSchemaMetadata(): SchemaMetadata | undefined {
+        return this.schemaMetadata;
     }
 
     // ===== Utility =====

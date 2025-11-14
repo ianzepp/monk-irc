@@ -5,7 +5,7 @@
 import { BaseIrcCommand } from '../lib/base-command.js';
 import type { IrcConnection, ServerConfig } from '../lib/types.js';
 import { IRC_REPLIES } from '../lib/types.js';
-import { ChannelMode } from '../lib/channel.js';
+import { ChannelMode, type SchemaMetadata } from '../lib/channel.js';
 
 export class JoinCommand extends BaseIrcCommand {
     readonly name = 'JOIN';
@@ -52,11 +52,17 @@ export class JoinCommand extends BaseIrcCommand {
                 return;
             }
 
-            // Query schema/record info for topic
-            const schemaInfo = await this.fetchSchemaInfo(connection, channelName);
-
             // Get or create channel
             const channel = tenant.getOrCreateChannel(channelName, user.getNickname());
+
+            // If this is a new schema channel (no members yet), fetch aggregate metadata
+            const isNewChannel = channel.isEmpty();
+            if (isNewChannel && !parsed.recordId) {
+                await this.fetchAndStoreSchemaMetadata(connection, channel, parsed.schema);
+            }
+
+            // Query schema/record info for topic
+            const schemaInfo = await this.fetchSchemaInfo(connection, channelName);
 
             // Check if user can join (key, invite-only, etc.)
             if (!channel.canJoin(user, key)) {
@@ -146,6 +152,92 @@ export class JoinCommand extends BaseIrcCommand {
     }
 
     /**
+     * Fetch and store aggregate metadata for a schema channel
+     * Called once when a schema channel is first created
+     */
+    private async fetchAndStoreSchemaMetadata(connection: IrcConnection, channel: any, schema: string): Promise<void> {
+        try {
+            // Build aggregate query: count, date ranges, and optional status grouping
+            const aggregateQuery = {
+                aggregate: {
+                    total_records: { $count: '*' },
+                    oldest_created: { $min: 'created_at' },
+                    newest_created: { $max: 'created_at' },
+                    last_updated: { $max: 'updated_at' }
+                }
+            };
+
+            const response = await this.apiRequest(connection, `/api/aggregate/${schema}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(aggregateQuery)
+            });
+
+            if (!response.ok) {
+                // Silently fail - not critical for channel operation
+                if (this.debug) {
+                    console.log(`⚠️  Failed to fetch aggregate metadata for ${schema}`);
+                }
+                return;
+            }
+
+            const result = await response.json() as { success?: boolean; data?: any[] };
+            const aggregateData = result.data?.[0];
+
+            if (!aggregateData) return;
+
+            // Try to fetch status breakdown if field exists
+            let statusBreakdown: Record<string, number> | undefined;
+            try {
+                const statusQuery = {
+                    aggregate: { count: { $count: '*' } },
+                    groupBy: ['status']
+                };
+                const statusResponse = await this.apiRequest(connection, `/api/aggregate/${schema}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(statusQuery)
+                });
+
+                if (statusResponse.ok) {
+                    const statusResult = await statusResponse.json() as { success?: boolean; data?: any[] };
+                    if (statusResult.data && statusResult.data.length > 0) {
+                        statusBreakdown = {};
+                        for (const row of statusResult.data) {
+                            if (row.status && row.count) {
+                                statusBreakdown[row.status] = row.count;
+                            }
+                        }
+                    }
+                }
+            } catch {
+                // Status field doesn't exist or error - that's fine
+            }
+
+            // Store metadata in channel
+            const metadata: SchemaMetadata = {
+                totalRecords: aggregateData.total_records || 0,
+                oldestCreated: aggregateData.oldest_created ? new Date(aggregateData.oldest_created) : undefined,
+                newestCreated: aggregateData.newest_created ? new Date(aggregateData.newest_created) : undefined,
+                lastUpdated: aggregateData.last_updated ? new Date(aggregateData.last_updated) : undefined,
+                statusBreakdown,
+                fetchedAt: new Date()
+            };
+
+            channel.setSchemaMetadata(metadata);
+
+            if (this.debug) {
+                console.log(`📊 [${connection.id}] Fetched schema metadata for ${schema}:`, metadata);
+            }
+        } catch (error) {
+            // Silently fail - not critical
+            if (this.debug) {
+                console.error(`⚠️  Error fetching schema metadata for ${schema}:`, error);
+            }
+        }
+    }
+
+    /**
      * Fetch schema/record information for topic display
      */
     private async fetchSchemaInfo(connection: IrcConnection, channelName: string): Promise<string> {
@@ -178,13 +270,12 @@ export class JoinCommand extends BaseIrcCommand {
                     throw new Error('Access denied');
                 }
             } else {
-                // Schema-level channel: GET /api/data/{schema}
-                const response = await this.apiRequest(connection, `/api/data/${schema}`);
+                // Schema-level channel: Use lightweight HEAD request or simple GET for validation
+                const response = await this.apiRequest(connection, `/api/data/${schema}?limit=1`);
 
                 if (response.ok) {
-                    const data = await response.json() as { data?: any[] };
-                    const count = data.data?.length || 0;
-                    return ` (${count} records available)`;
+                    // Schema exists and user has access - metadata will be shown in topic
+                    return '';
                 } else if (response.status === 404) {
                     this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHCHANNEL,
                         `${channelName} :Schema '${schema}' not found`);
@@ -228,21 +319,89 @@ export class JoinCommand extends BaseIrcCommand {
         if (topic) {
             // In-memory topic takes precedence
             this.sendReply(connection, IRC_REPLIES.RPL_TOPIC, `${channelName} :${topic}`);
-        } else if (schemaInfo) {
-            // Fall back to schema/record info
-            const parsed = this.parseChannelName(channelName);
-            if (parsed) {
-                const { schema, recordId } = parsed;
-                if (recordId) {
-                    this.sendReply(connection, IRC_REPLIES.RPL_TOPIC,
-                        `${channelName} :Record context: ${schema}/${recordId}${schemaInfo}`);
-                } else {
-                    this.sendReply(connection, IRC_REPLIES.RPL_TOPIC,
-                        `${channelName} :Schema context: ${schema}${schemaInfo}`);
-                }
-            }
         } else {
-            this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
+            // Check for schema metadata
+            const metadata = channel.getSchemaMetadata();
+            if (metadata) {
+                const topicParts: string[] = [];
+
+                // Total records
+                topicParts.push(`${metadata.totalRecords} records`);
+
+                // Date range
+                if (metadata.oldestCreated && metadata.newestCreated) {
+                    const oldestDate = this.formatDate(metadata.oldestCreated);
+                    const newestDate = this.formatDate(metadata.newestCreated);
+                    topicParts.push(`created ${oldestDate} to ${newestDate}`);
+                }
+
+                // Last activity
+                if (metadata.lastUpdated) {
+                    const lastUpdatedDate = this.formatDate(metadata.lastUpdated);
+                    topicParts.push(`last updated ${lastUpdatedDate}`);
+                }
+
+                // Status breakdown
+                if (metadata.statusBreakdown && Object.keys(metadata.statusBreakdown).length > 0) {
+                    const statusParts = Object.entries(metadata.statusBreakdown)
+                        .map(([status, count]) => `${status}:${count}`)
+                        .join(', ');
+                    topicParts.push(`[${statusParts}]`);
+                }
+
+                const parsed = this.parseChannelName(channelName);
+                if (parsed) {
+                    const { schema, recordId } = parsed;
+                    if (recordId) {
+                        this.sendReply(connection, IRC_REPLIES.RPL_TOPIC,
+                            `${channelName} :Record: ${schema}/${recordId}${schemaInfo}`);
+                    } else {
+                        this.sendReply(connection, IRC_REPLIES.RPL_TOPIC,
+                            `${channelName} :${topicParts.join(' | ')}`);
+                    }
+                }
+            } else if (schemaInfo) {
+                // Fall back to simple schema/record info
+                const parsed = this.parseChannelName(channelName);
+                if (parsed) {
+                    const { schema, recordId } = parsed;
+                    if (recordId) {
+                        this.sendReply(connection, IRC_REPLIES.RPL_TOPIC,
+                            `${channelName} :Record: ${schema}/${recordId}${schemaInfo}`);
+                    } else {
+                        this.sendReply(connection, IRC_REPLIES.RPL_TOPIC,
+                            `${channelName} :Schema: ${schema}${schemaInfo}`);
+                    }
+                }
+            } else {
+                this.sendReply(connection, IRC_REPLIES.RPL_NOTOPIC, `${channelName} :No topic is set`);
+            }
+        }
+    }
+
+    /**
+     * Format date for topic display
+     */
+    private formatDate(date: Date): string {
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 0) {
+            return 'today';
+        } else if (diffDays === 1) {
+            return 'yesterday';
+        } else if (diffDays < 7) {
+            return `${diffDays}d ago`;
+        } else if (diffDays < 30) {
+            const weeks = Math.floor(diffDays / 7);
+            return `${weeks}w ago`;
+        } else if (diffDays < 365) {
+            const months = Math.floor(diffDays / 30);
+            return `${months}mo ago`;
+        } else {
+            const years = Math.floor(diffDays / 365);
+            return `${years}y ago`;
         }
     }
 
