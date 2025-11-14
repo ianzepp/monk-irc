@@ -62,8 +62,11 @@ export abstract class BaseFunction {
             throw new Error(`File retrieve failed: ${response.status} ${response.statusText}`);
         }
 
-        const result = await response.json();
-        return result;
+        const result = await response.json() as any;
+
+        // File API returns { success: true, data: { content: ..., file_metadata: ... } }
+        // Return the inner data object for easier access
+        return result.data || result;
     }
 
     /**
@@ -92,8 +95,11 @@ export abstract class BaseFunction {
             throw new Error(`File store failed: ${response.status} ${response.statusText}`);
         }
 
-        const result = await response.json();
-        return result;
+        const result = await response.json() as any;
+
+        // File API returns { success: true, data: { ... } }
+        // Return the inner data object for consistency
+        return result.data || result;
     }
 
     /**
@@ -119,8 +125,11 @@ export abstract class BaseFunction {
             throw new Error(`File delete failed: ${response.status} ${response.statusText}`);
         }
 
-        const result = await response.json();
-        return result;
+        const result = await response.json() as any;
+
+        // File API returns { success: true, data: { ... } }
+        // Return the inner data object for consistency
+        return result.data || result;
     }
 
     /**
