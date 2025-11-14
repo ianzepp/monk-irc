@@ -57,39 +57,39 @@ export class GetFunction extends BaseFunction {
 
         try {
             const conn = sender.getConnection();
-            const response = await this.apiRequest(conn, `/api/data/${schema}/${recordId}`);
-
-            if (response.status === 404) {
-                this.sendNoticeToSender(sender, channel, `Record not found: ${recordId}`);
-                return;
-            }
-
-            if (!response.ok) {
-                this.sendNoticeToSender(sender, channel, `Get failed: ${response.status} ${response.statusText}`);
-                return;
-            }
-
-            const result = await response.json() as { data?: any };
-            const record = result.data;
-
-            if (!record) {
-                this.sendNoticeToSender(sender, channel, `Record not found: ${recordId}`);
-                return;
-            }
-
-            // Display record
-            this.sendNotice(channel, `Record: ${recordId}`);
 
             if (fields && fields.length > 0) {
-                // Show only requested fields
+                // Get specific fields using File API
                 for (const field of fields) {
-                    const value = record[field];
-                    if (value !== undefined) {
-                        this.sendNotice(channel, `  ${field}: ${JSON.stringify(value)}`);
+                    try {
+                        // Build File API path: /data/schema/recordId/field
+                        const filePath = `/data/${schema}/${recordId}/${field}`;
+                        const result = await this.fileRetrieve(conn, filePath, { format: 'json' });
+
+                        // Display field value
+                        const displayValue = typeof result.content === 'string'
+                            ? result.content
+                            : JSON.stringify(result.content);
+                        this.sendNotice(channel, `${field}: ${displayValue}`);
+                    } catch (error) {
+                        // Field might not exist
+                        this.sendNotice(channel, `${field}: (not found)`);
                     }
                 }
             } else {
-                // Show all fields (limited to reasonable size)
+                // Get whole record using File API
+                const filePath = `/data/${schema}/${recordId}.json`;
+                const result = await this.fileRetrieve(conn, filePath, { format: 'json' });
+
+                if (!result.content) {
+                    this.sendNoticeToSender(sender, channel, `Record not found: ${recordId}`);
+                    return;
+                }
+
+                // Display all fields
+                this.sendNotice(channel, `Record: ${recordId}`);
+
+                const record = result.content;
                 const recordStr = JSON.stringify(record, null, 2);
                 const lines = recordStr.split('\n');
 
@@ -100,7 +100,7 @@ export class GetFunction extends BaseFunction {
                 }
 
                 if (lines.length > maxLines) {
-                    this.sendNotice(channel, `  ... (${lines.length - maxLines} more lines, use --fields to filter)`);
+                    this.sendNotice(channel, `  ... (${lines.length - maxLines} more lines)`);
                 }
             }
         } catch (error) {

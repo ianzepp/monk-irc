@@ -39,6 +39,91 @@ export abstract class BaseFunction {
     }
 
     /**
+     * File API convenience wrappers
+     */
+
+    /**
+     * Retrieve a file or field using File API
+     */
+    protected async fileRetrieve(
+        connection: IrcConnection,
+        filePath: string,
+        options?: { format?: 'json' | 'raw'; binary_mode?: boolean }
+    ): Promise<any> {
+        const response = await this.apiRequest(connection, '/api/file/retrieve', {
+            method: 'POST',
+            body: JSON.stringify({
+                path: filePath,
+                file_options: options
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`File retrieve failed: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        return result;
+    }
+
+    /**
+     * Store a file or field using File API
+     */
+    protected async fileStore(
+        connection: IrcConnection,
+        filePath: string,
+        content: any,
+        options?: { overwrite?: boolean; atomic?: boolean; validate_schema?: boolean }
+    ): Promise<any> {
+        const response = await this.apiRequest(connection, '/api/file/store', {
+            method: 'POST',
+            body: JSON.stringify({
+                path: filePath,
+                content: content,
+                file_options: {
+                    overwrite: options?.overwrite ?? true,
+                    atomic: options?.atomic ?? true,
+                    validate_schema: options?.validate_schema ?? true
+                }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`File store failed: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        return result;
+    }
+
+    /**
+     * Delete a file or field using File API
+     */
+    protected async fileDelete(
+        connection: IrcConnection,
+        filePath: string,
+        options?: { permanent?: boolean; atomic?: boolean }
+    ): Promise<any> {
+        const response = await this.apiRequest(connection, '/api/file/delete', {
+            method: 'POST',
+            body: JSON.stringify({
+                path: filePath,
+                file_options: {
+                    permanent: options?.permanent ?? false,
+                    atomic: options?.atomic ?? true
+                }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`File delete failed: ${response.status} ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        return result;
+    }
+
+    /**
      * Execute the function
      * @param sender User who invoked the function
      * @param channel Channel where function was invoked
