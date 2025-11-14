@@ -33,6 +33,13 @@ export class UserCommand extends BaseIrcCommand {
 
             connection.realname = realname;
 
+            // Update the existing User object with realname
+            const tenant = this.server.getTenant(connection.tenant!);
+            const user = tenant?.getUserByConnection(connection);
+            if (user) {
+                user.setRealname(realname);
+            }
+
             if (this.debug) {
                 console.log(`📝 [${connection.id}] USER command: using auth from NICK, realname="${realname}"`);
             }
@@ -141,11 +148,25 @@ export class UserCommand extends BaseIrcCommand {
             console.log(`✅ [${connection.id}] Authenticated ${connection.username}@${connection.tenant}`);
         }
 
-        // Register connection with tenant
-        const tenant = this.server.getTenant(connection.tenant);
+        // Get or create tenant
+        const tenant = this.server.getTenant(connection.tenant!);
         const isFirstConnection = tenant.getConnectionCount() === 0;
 
-        tenant.addConnection(connection);
+        // Create User object
+        const { User } = await import('../lib/user.js');
+        const user = new User(
+            connection.username!,
+            tenant,
+            connection.nickname || connection.username!,
+            connection.realname || connection.username!
+        );
+
+        // Set connection and authentication on user
+        user.setConnection(connection);
+        user.authenticate(jwt, connection.apiUrl!, this.serverName);
+
+        // Add user to tenant
+        tenant.addUser(user);
 
         if (this.debug) {
             console.log(`🏢 [${connection.id}] Registered with tenant: ${connection.tenant}`);
