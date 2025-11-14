@@ -74,10 +74,23 @@ export class NickCommand extends BaseIrcCommand {
         }
 
         // If connection already registered, notify of nickname change
-        if (connection.registered) {
-            const oldPrefix = this.getUserPrefix(connection);
-            connection.nickname = nickname;
-            this.sendMessage(connection, `:${oldPrefix} NICK ${nickname}`);
+        if (connection.registered && connection.tenant) {
+            const tenant = this.server.getTenant(connection.tenant);
+            const user = tenant?.getUserByConnection(connection);
+
+            if (user) {
+                const oldPrefix = user.getUserPrefix();
+                user.setNickname(nickname);
+                connection.nickname = nickname;
+
+                // Notify user of nick change
+                this.sendMessage(connection, `:${oldPrefix} NICK ${nickname}`);
+
+                // Broadcast nick change to all channels the user is in
+                for (const channel of user.getChannels()) {
+                    channel.broadcast(`:${oldPrefix} NICK ${nickname}`, user);
+                }
+            }
         }
 
         // Check if we should now complete registration
@@ -168,11 +181,25 @@ export class NickCommand extends BaseIrcCommand {
             console.log(`✅ [${connection.id}] Authenticated ${connection.username}@${connection.tenant}`);
         }
 
-        // Register connection with tenant
+        // Get or create tenant
         const tenant = this.server.getTenant(connection.tenant);
         const isFirstConnection = tenant.getConnectionCount() === 0;
 
-        tenant.addConnection(connection);
+        // Create User object (import User class at top of file)
+        const { User } = await import('../lib/user.js');
+        const user = new User(
+            connection.username!,
+            tenant,
+            connection.nickname!,
+            connection.realname || connection.username!
+        );
+
+        // Set connection and authentication on user
+        user.setConnection(connection);
+        user.authenticate(jwt, connection.apiUrl!, this.serverName);
+
+        // Add user to tenant
+        tenant.addUser(user);
 
         if (this.debug) {
             console.log(`🏢 [${connection.id}] Registered with tenant: ${connection.tenant}`);
