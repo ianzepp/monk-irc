@@ -15,74 +15,97 @@ export class PrivmsgCommand extends BaseIrcCommand {
     }
 
     async execute(connection: IrcConnection, args: string): Promise<void> {
-        // Parse: PRIVMSG <target> :<message>
-        const spaceIndex = args.indexOf(' ');
+        // Parse message command using helper
+        const parsed = this.parseMessageCommand(connection, args, 'PRIVMSG');
+        if (!parsed) return;
 
-        if (spaceIndex === -1) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NORECIPIENT, ':No recipient given (PRIVMSG)');
-            return;
-        }
-
-        const target = args.substring(0, spaceIndex);
-        let message = args.substring(spaceIndex + 1);
-
-        // Remove leading colon if present
-        if (message.startsWith(':')) {
-            message = message.substring(1);
-        }
-
-        if (!message) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NOTEXTTOSEND, ':No text to send');
-            return;
-        }
+        const { target, message } = parsed;
 
         if (this.debug) {
             console.log(`💬 [${connection.id}] ${connection.nickname} -> ${target}: ${message}`);
         }
 
+        // Get tenant and user objects
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const sender = tenant.getUserByConnection(connection);
+        if (!sender) return;
+
         // Check if target is a channel
         if (target.startsWith('#')) {
-            // Channel message
-            if (!connection.channels.has(target)) {
-                this.sendReply(connection, IRC_REPLIES.ERR_CANNOTSENDTOCHAN, `${target} :Cannot send to channel`);
-                return;
-            }
-
-            const userPrefix = this.getUserPrefix(connection);
-            const channelMessage = `:${userPrefix} PRIVMSG ${target} :${message}`;
-
-            // Broadcast message to channel members (excluding sender)
-            this.server.broadcastToChannel(
-                connection,
-                target,
-                channelMessage,
-                connection
-            );
-
-            // Forward to tenant-aware connections with tenant tag
-            if (connection.tenant) {
-                this.forwardToTenantAware(connection, target, message);
-            }
-
-            // Pure bridge - no message persistence
-
+            await this.handleChannelMessage(sender, tenant, target, message);
         } else {
-            // Private message to user
-            const targetConnection = this.server.getConnectionByNickname(target);
-
-            if (!targetConnection) {
-                this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${target} :No such nick/channel`);
-                return;
-            }
-
-            // Send message to target user
-            this.sendMessage(
-                targetConnection,
-                `:${this.getUserPrefix(connection)} PRIVMSG ${target} :${message}`
-            );
-
-            // Pure bridge - no message persistence
+            await this.handlePrivateMessage(sender, tenant, target, message);
         }
+    }
+
+    private async handleChannelMessage(
+        sender: any,
+        tenant: any,
+        channelName: string,
+        message: string
+    ): Promise<void> {
+        const channel = tenant.getChannel(channelName);
+
+        if (!channel) {
+            const conn = sender.getConnection();
+            if (conn) {
+                this.sendReply(conn, IRC_REPLIES.ERR_NOSUCHCHANNEL,
+                    `${channelName} :No such channel`);
+            }
+            return;
+        }
+
+        // Check if sender is a member and has permission to send
+        if (!channel.hasMember(sender)) {
+            const conn = sender.getConnection();
+            if (conn) {
+                this.sendReply(conn, IRC_REPLIES.ERR_CANNOTSENDTOCHAN,
+                    `${channelName} :Cannot send to channel (not a member)`);
+            }
+            return;
+        }
+
+        if (!channel.canSendMessage(sender)) {
+            const conn = sender.getConnection();
+            if (conn) {
+                this.sendReply(conn, IRC_REPLIES.ERR_CANNOTSENDTOCHAN,
+                    `${channelName} :Cannot send to channel (moderated)`);
+            }
+            return;
+        }
+
+        // Broadcast message to channel (Channel class handles excluding sender)
+        const userPrefix = sender.getUserPrefix();
+        channel.broadcast(`:${userPrefix} PRIVMSG ${channelName} :${message}`, sender);
+
+        // Forward to tenant-aware connections with tenant tag
+        const senderConn = sender.getConnection();
+        if (senderConn?.tenant) {
+            this.forwardToTenantAware(senderConn, channelName, message);
+        }
+    }
+
+    private async handlePrivateMessage(
+        sender: any,
+        tenant: any,
+        targetNick: string,
+        message: string
+    ): Promise<void> {
+        const targetUser = tenant.getUserByNickname(targetNick);
+
+        if (!targetUser) {
+            const conn = sender.getConnection();
+            if (conn) {
+                this.sendNoSuchNick(conn, targetNick);
+            }
+            return;
+        }
+
+        // Send message to target user
+        const userPrefix = sender.getUserPrefix();
+        targetUser.sendMessage(`:${userPrefix} PRIVMSG ${targetNick} :${message}`);
     }
 
     /**

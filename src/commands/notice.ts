@@ -17,19 +17,10 @@ export class NoticeCommand extends BaseIrcCommand {
 
     async execute(connection: IrcConnection, args: string): Promise<void> {
         // Parse: NOTICE <target> :<message>
-        const colonIndex = args.indexOf(':');
-        if (colonIndex === -1) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NEEDMOREPARAMS, 'NOTICE :Not enough parameters');
-            return;
-        }
+        const parsed = this.parseMessageCommand(connection, args, 'NOTICE');
+        if (!parsed) return;
 
-        const target = args.substring(0, colonIndex).trim();
-        const message = args.substring(colonIndex + 1);
-
-        if (!target || !message) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NEEDMOREPARAMS, 'NOTICE :Not enough parameters');
-            return;
-        }
+        const { target, message } = parsed;
 
         // Check if this is a tenant-aware connection sending to #channel@tenant
         if (connection.isTenantAware && target.includes('@')) {
@@ -37,39 +28,62 @@ export class NoticeCommand extends BaseIrcCommand {
             return;
         }
 
+        // Get tenant and user objects
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const sender = tenant.getUserByConnection(connection);
+        if (!sender) return;
+
         // Check if target is a channel
         if (target.startsWith('#')) {
-            // Channel notice
-            if (!connection.channels.has(target)) {
-                this.sendReply(connection, IRC_REPLIES.ERR_CANNOTSENDTOCHAN, `${target} :Cannot send to channel`);
-                return;
-            }
-
-            // Broadcast notice to channel (excluding sender)
-            this.server.broadcastToChannel(
-                connection,
-                target,
-                `:${this.getUserPrefix(connection)} NOTICE ${target} :${message}`,
-                connection
-            );
-
-            if (this.debug) {
-                console.log(`📢 [${connection.id}] ${connection.nickname} -> ${target}: ${message}`);
-            }
+            await this.handleChannelNotice(sender, tenant, target, message);
         } else {
-            // Private notice to user
-            const targetConnection = this.server.getConnectionByNickname(target);
+            await this.handlePrivateNotice(sender, tenant, target, message);
+        }
+    }
 
-            if (!targetConnection) {
-                this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${target} :No such nick/channel`);
-                return;
-            }
+    private async handleChannelNotice(
+        sender: any,
+        tenant: any,
+        channelName: string,
+        message: string
+    ): Promise<void> {
+        const channel = tenant.getChannel(channelName);
 
-            targetConnection.socket.write(`:${this.getUserPrefix(connection)} NOTICE ${target} :${message}\r\n`);
+        if (!channel || !channel.hasMember(sender)) {
+            // NOTICE should not send error replies - silently drop
+            return;
+        }
 
-            if (this.debug) {
-                console.log(`📢 [${connection.id}] ${connection.nickname} -> ${target}: ${message}`);
-            }
+        // Broadcast notice to channel
+        const userPrefix = sender.getUserPrefix();
+        channel.broadcast(`:${userPrefix} NOTICE ${channelName} :${message}`, sender);
+
+        if (this.debug) {
+            console.log(`📢 [${sender.getConnection()?.id}] ${sender.getNickname()} -> ${channelName}: ${message}`);
+        }
+    }
+
+    private async handlePrivateNotice(
+        sender: any,
+        tenant: any,
+        targetNick: string,
+        message: string
+    ): Promise<void> {
+        const targetUser = tenant.getUserByNickname(targetNick);
+
+        if (!targetUser) {
+            // NOTICE should not send error replies - silently drop
+            return;
+        }
+
+        // Send notice to target user
+        const userPrefix = sender.getUserPrefix();
+        targetUser.sendMessage(`:${userPrefix} NOTICE ${targetNick} :${message}`);
+
+        if (this.debug) {
+            console.log(`📢 [${sender.getConnection()?.id}] ${sender.getNickname()} -> ${targetNick}: ${message}`);
         }
     }
 
@@ -87,13 +101,13 @@ export class NoticeCommand extends BaseIrcCommand {
             return; // Silently drop invalid format
         }
 
-        const channel = target.substring(0, atIndex);
+        const channelName = target.substring(0, atIndex);
         const tenantName = target.substring(atIndex + 1);
 
         // Validate channel name
-        if (!this.isValidChannelName(channel)) {
+        if (!this.isValidChannelName(channelName)) {
             if (this.debug) {
-                console.warn(`⚠️ [${connection.id}] Invalid channel name in tenant-aware NOTICE: ${channel}`);
+                console.warn(`⚠️ [${connection.id}] Invalid channel name in tenant-aware NOTICE: ${channelName}`);
             }
             return; // Silently drop invalid channel
         }
@@ -107,26 +121,24 @@ export class NoticeCommand extends BaseIrcCommand {
             return; // Silently drop unknown tenant
         }
 
-        // Get channel members from this tenant
-        const members = tenant.getChannelMembers(channel);
-
-        if (members.length === 0) {
+        // Get channel object
+        const channel = tenant.getChannel(channelName);
+        if (!channel) {
             if (this.debug) {
-                console.log(`📢 [${connection.id}] No members in ${channel} for tenant ${tenantName}`);
+                console.log(`📢 [${connection.id}] No channel ${channelName} for tenant ${tenantName}`);
             }
             return;
         }
 
         // Send NOTICE to all members (without the @tenant tag)
         const userPrefix = this.getUserPrefix(connection);
-        const noticeMessage = `:${userPrefix} NOTICE ${channel} :${message}\r\n`;
+        const noticeMessage = `:${userPrefix} NOTICE ${channelName} :${message}`;
 
-        for (const member of members) {
-            member.socket.write(noticeMessage);
-        }
+        // Broadcast using Channel class
+        channel.broadcast(noticeMessage);
 
         if (this.debug) {
-            console.log(`📢 [${connection.id}] Sent tenant-aware NOTICE to ${members.length} members in ${channel}@${tenantName}`);
+            console.log(`📢 [${connection.id}] Sent tenant-aware NOTICE to ${channel.getMemberCount()} members in ${channelName}@${tenantName}`);
         }
     }
 }
