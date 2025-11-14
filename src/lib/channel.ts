@@ -22,7 +22,6 @@ export interface SchemaMetadata {
     oldestCreated?: Date;
     newestCreated?: Date;
     lastUpdated?: Date;
-    statusBreakdown?: Record<string, number>;
     fetchedAt: Date;
 }
 

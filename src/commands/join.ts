@@ -186,41 +186,12 @@ export class JoinCommand extends BaseIrcCommand {
 
             if (!aggregateData) return;
 
-            // Try to fetch status breakdown if field exists
-            let statusBreakdown: Record<string, number> | undefined;
-            try {
-                const statusQuery = {
-                    aggregate: { count: { $count: '*' } },
-                    groupBy: ['status']
-                };
-                const statusResponse = await this.apiRequest(connection, `/api/aggregate/${schema}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(statusQuery)
-                });
-
-                if (statusResponse.ok) {
-                    const statusResult = await statusResponse.json() as { success?: boolean; data?: any[] };
-                    if (statusResult.data && statusResult.data.length > 0) {
-                        statusBreakdown = {};
-                        for (const row of statusResult.data) {
-                            if (row.status && row.count) {
-                                statusBreakdown[row.status] = row.count;
-                            }
-                        }
-                    }
-                }
-            } catch {
-                // Status field doesn't exist or error - that's fine
-            }
-
             // Store metadata in channel
             const metadata: SchemaMetadata = {
                 totalRecords: aggregateData.total_records || 0,
                 oldestCreated: aggregateData.oldest_created ? new Date(aggregateData.oldest_created) : undefined,
                 newestCreated: aggregateData.newest_created ? new Date(aggregateData.newest_created) : undefined,
                 lastUpdated: aggregateData.last_updated ? new Date(aggregateData.last_updated) : undefined,
-                statusBreakdown,
                 fetchedAt: new Date()
             };
 
@@ -339,14 +310,6 @@ export class JoinCommand extends BaseIrcCommand {
                 if (metadata.lastUpdated) {
                     const lastUpdatedDate = this.formatDate(metadata.lastUpdated);
                     topicParts.push(`last updated ${lastUpdatedDate}`);
-                }
-
-                // Status breakdown
-                if (metadata.statusBreakdown && Object.keys(metadata.statusBreakdown).length > 0) {
-                    const statusParts = Object.entries(metadata.statusBreakdown)
-                        .map(([status, count]) => `${status}:${count}`)
-                        .join(', ');
-                    topicParts.push(`[${statusParts}]`);
                 }
 
                 const parsed = this.parseChannelName(channelName);
