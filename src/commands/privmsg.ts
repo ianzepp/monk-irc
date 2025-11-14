@@ -121,6 +121,15 @@ export class PrivmsgCommand extends BaseIrcCommand {
             return;
         }
 
+        // Check if function is schema-only (not available in record channels)
+        const isRecordChannel = channel.isRecordChannel();
+        const schemaOnlyFunctions = ['find', 'list', 'count', 'show', 'open', 'get'];
+
+        if (isRecordChannel && schemaOnlyFunctions.includes(functionName)) {
+            sender.sendMessage(`:server NOTICE ${channel.getName()} :!${functionName} is not available in record channels`);
+            return;
+        }
+
         try {
             await func.executeFunction(sender, channel, args);
         } catch (error) {
