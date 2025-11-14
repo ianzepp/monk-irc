@@ -31,6 +31,12 @@ export class NoticeCommand extends BaseIrcCommand {
             return;
         }
 
+        // Check if this is a tenant-aware connection sending to #channel@tenant
+        if (connection.isTenantAware && target.includes('@')) {
+            await this.handleTenantAwareNotice(connection, target, message);
+            return;
+        }
+
         // Check if target is a channel
         if (target.startsWith('#')) {
             // Channel notice
@@ -64,6 +70,63 @@ export class NoticeCommand extends BaseIrcCommand {
             if (this.debug) {
                 console.log(`📢 [${connection.id}] ${connection.nickname} -> ${target}: ${message}`);
             }
+        }
+    }
+
+    /**
+     * Handle NOTICE from tenant-aware connection with #channel@tenant format
+     * Parse the tenant tag and route to the correct tenant's channel members
+     */
+    private async handleTenantAwareNotice(connection: IrcConnection, target: string, message: string): Promise<void> {
+        // Parse #channel@tenant
+        const atIndex = target.lastIndexOf('@');
+        if (atIndex === -1 || !target.startsWith('#')) {
+            if (this.debug) {
+                console.warn(`⚠️ [${connection.id}] Invalid tenant-aware NOTICE format: ${target}`);
+            }
+            return; // Silently drop invalid format
+        }
+
+        const channel = target.substring(0, atIndex);
+        const tenantName = target.substring(atIndex + 1);
+
+        // Validate channel name
+        if (!this.isValidChannelName(channel)) {
+            if (this.debug) {
+                console.warn(`⚠️ [${connection.id}] Invalid channel name in tenant-aware NOTICE: ${channel}`);
+            }
+            return; // Silently drop invalid channel
+        }
+
+        // Get the tenant
+        const tenant = this.server.getTenant(tenantName);
+        if (!tenant) {
+            if (this.debug) {
+                console.warn(`⚠️ [${connection.id}] Unknown tenant in NOTICE: ${tenantName}`);
+            }
+            return; // Silently drop unknown tenant
+        }
+
+        // Get channel members from this tenant
+        const members = tenant.getChannelMembers(channel);
+
+        if (members.length === 0) {
+            if (this.debug) {
+                console.log(`📢 [${connection.id}] No members in ${channel} for tenant ${tenantName}`);
+            }
+            return;
+        }
+
+        // Send NOTICE to all members (without the @tenant tag)
+        const userPrefix = this.getUserPrefix(connection);
+        const noticeMessage = `:${userPrefix} NOTICE ${channel} :${message}\r\n`;
+
+        for (const member of members) {
+            member.socket.write(noticeMessage);
+        }
+
+        if (this.debug) {
+            console.log(`📢 [${connection.id}] Sent tenant-aware NOTICE to ${members.length} members in ${channel}@${tenantName}`);
         }
     }
 }

@@ -48,13 +48,21 @@ export class PrivmsgCommand extends BaseIrcCommand {
                 return;
             }
 
-            // Broadcast message to channel (excluding sender)
+            const userPrefix = this.getUserPrefix(connection);
+            const channelMessage = `:${userPrefix} PRIVMSG ${target} :${message}`;
+
+            // Broadcast message to channel members (excluding sender)
             this.server.broadcastToChannel(
                 connection,
                 target,
-                `:${this.getUserPrefix(connection)} PRIVMSG ${target} :${message}`,
+                channelMessage,
                 connection
             );
+
+            // Forward to tenant-aware connections with tenant tag
+            if (connection.tenant) {
+                this.forwardToTenantAware(connection, target, message);
+            }
 
             // Pure bridge - no message persistence
 
@@ -74,6 +82,30 @@ export class PrivmsgCommand extends BaseIrcCommand {
             );
 
             // Pure bridge - no message persistence
+        }
+    }
+
+    /**
+     * Forward message to all tenant-aware connections with #channel@tenant format
+     */
+    private forwardToTenantAware(connection: IrcConnection, channel: string, message: string): void {
+        const tenantAwareConnections = this.server.getTenantAwareConnections();
+
+        if (tenantAwareConnections.length === 0) {
+            return;
+        }
+
+        // Build message with tenant tag: :nick!user@tenant PRIVMSG #channel@tenant :message
+        const userPrefix = `${connection.nickname}!${connection.username}@${connection.tenant}`;
+        const targetWithTenant = `${channel}@${connection.tenant}`;
+        const tenantAwareMessage = `:${userPrefix} PRIVMSG ${targetWithTenant} :${message}\r\n`;
+
+        for (const tenantAwareConn of tenantAwareConnections) {
+            tenantAwareConn.socket.write(tenantAwareMessage);
+        }
+
+        if (this.debug) {
+            console.log(`🤖 Forwarded to ${tenantAwareConnections.length} tenant-aware connections: ${targetWithTenant}`);
         }
     }
 }
