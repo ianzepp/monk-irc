@@ -31,46 +31,61 @@ export class InviteCommand extends BaseIrcCommand {
             return;
         }
 
-        // Check if inviter is in the channel
-        if (!connection.channels.has(channelName)) {
+        // Get tenant, inviter, and channel
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
+        const inviter = tenant.getUserByConnection(connection);
+        if (!inviter) return;
+
+        const channel = tenant.getChannel(channelName);
+        if (!channel) {
             this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
             return;
         }
 
-        // Find target user
-        const targetConnection = this.server.getConnectionByNickname(targetNick);
-        if (!targetConnection) {
-            this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${targetNick} :No such nick`);
+        // Check if inviter is in the channel
+        if (!channel.hasMember(inviter)) {
+            this.sendReply(connection, IRC_REPLIES.ERR_NOTONCHANNEL, `${channelName} :You're not on that channel`);
             return;
         }
 
-        // Check if target is in the same tenant
-        if (targetConnection.tenant !== connection.tenant) {
+        // Check if inviter has permission to invite
+        if (!channel.canInvite(inviter)) {
+            this.sendReply(connection, IRC_REPLIES.ERR_CHANOPRIVSNEEDED,
+                `${channelName} :You're not a channel operator`);
+            return;
+        }
+
+        // Find target user
+        const targetUser = tenant.getUserByNickname(targetNick);
+        if (!targetUser) {
             this.sendReply(connection, IRC_REPLIES.ERR_NOSUCHNICK, `${targetNick} :No such nick`);
             return;
         }
 
         // Check if target is already in the channel
-        if (targetConnection.channels.has(channelName)) {
+        if (channel.hasMember(targetUser)) {
             this.sendReply(connection, IRC_REPLIES.ERR_USERONCHANNEL, `${targetNick} ${channelName} :is already on channel`);
             return;
         }
 
         // Send invite to target
-        targetConnection.socket.write(`:${this.getUserPrefix(connection)} INVITE ${targetNick} ${channelName}\r\n`);
+        const inviterPrefix = inviter.getUserPrefix();
+        targetUser.sendMessage(`:${inviterPrefix} INVITE ${targetNick} ${channelName}`);
 
         // Confirm to inviter (RPL_INVITING)
         this.sendReply(connection, '341', `${targetNick} ${channelName}`);
 
         // Broadcast INVITE to channel members with invite-notify capability
-        this.broadcastInviteNotification(connection, targetNick, channelName);
+        this.broadcastInviteNotification(inviter, targetNick, channel);
 
         // Notify channel (optional - some servers do this)
         const schemaName = this.getSchemaFromChannel(channelName);
         const schemaInfo = schemaName ? ` (schema: ${schemaName})` : '';
 
         if (this.debug) {
-            console.log(`💌 [${connection.id}] ${connection.nickname} invited ${targetNick} to ${channelName}${schemaInfo}`);
+            console.log(`💌 [${connection.id}] ${inviter.getNickname()} invited ${targetNick} to ${channelName}${schemaInfo}`);
         }
     }
 
@@ -78,25 +93,27 @@ export class InviteCommand extends BaseIrcCommand {
      * Broadcast INVITE notification to channel members with invite-notify capability
      * Format: :inviter!user@host INVITE invitee #channel
      */
-    private broadcastInviteNotification(inviter: IrcConnection, targetNick: string, channelName: string): void {
-        const inviterPrefix = this.getUserPrefix(inviter);
+    private broadcastInviteNotification(inviter: any, targetNick: string, channel: any): void {
+        const inviterPrefix = inviter.getUserPrefix();
+        const channelName = channel.getName();
         const inviteMessage = `:${inviterPrefix} INVITE ${targetNick} ${channelName}`;
 
         // Get all channel members
-        const members = this.server.getChannelMembers(inviter, channelName);
+        const members = channel.getMembers();
 
         for (const member of members) {
             // Skip the inviter (they already got confirmation)
-            if (member.id === inviter.id) {
+            if (member === inviter) {
                 continue;
             }
 
             // Only send to members with invite-notify capability
-            if (member.capabilities.has('invite-notify')) {
-                this.sendMessage(member, inviteMessage);
+            if (member.hasCapability('invite-notify')) {
+                member.sendMessage(inviteMessage);
 
                 if (this.debug) {
-                    console.log(`📢 [${member.id}] Notified ${member.nickname} of INVITE ${targetNick} to ${channelName}`);
+                    const conn = member.getConnection();
+                    console.log(`📢 [${conn?.id}] Notified ${member.getNickname()} of INVITE ${targetNick} to ${channelName}`);
                 }
             }
         }
