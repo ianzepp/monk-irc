@@ -66,13 +66,27 @@ export class GetFunction extends BaseFunction {
                         const filePath = `/data/${schema}/${recordId}/${field}`;
                         const result = await this.fileRetrieve(conn, filePath, { format: 'json' });
 
-                        // Display field value
-                        const displayValue = typeof result.content === 'string'
-                            ? result.content
-                            : JSON.stringify(result.content);
-                        this.sendNotice(channel, `${field}: ${displayValue}`);
+                        if (this.debug) {
+                            console.log(`📥 File API response for ${filePath}:`, JSON.stringify(result, null, 2));
+                        }
+
+                        // File API returns { success: true, content: value, file_metadata: {...} }
+                        const value = result.content;
+
+                        if (value === undefined || value === null) {
+                            this.sendNotice(channel, `${field}: (not set)`);
+                        } else {
+                            const displayValue = typeof value === 'string'
+                                ? value
+                                : JSON.stringify(value);
+                            this.sendNotice(channel, `${field}: ${displayValue}`);
+                        }
                     } catch (error) {
-                        // Field might not exist
+                        // Field might not exist or access denied
+                        const message = error instanceof Error ? error.message : 'error';
+                        if (this.debug) {
+                            console.log(`⚠️  Failed to get ${field}:`, message);
+                        }
                         this.sendNotice(channel, `${field}: (not found)`);
                     }
                 }
