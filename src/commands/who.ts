@@ -26,22 +26,36 @@ export class WhoCommand extends BaseIrcCommand {
             console.log(`👤 [${connection.id}] ${connection.nickname} requesting WHO for ${mask}`);
         }
 
+        // Get tenant
+        const tenant = this.server.getTenantForConnection(connection);
+        if (!tenant) return;
+
         // Check if it's a channel
         if (mask.startsWith('#')) {
             // WHO for channel
-            const members = this.server.getChannelMembers(connection, mask);
-            
-            for (const member of members) {
-                if (member.nickname) {
+            const channel = tenant.getChannel(mask);
+
+            if (channel) {
+                const members = channel.getMembers();
+
+                for (const member of members) {
                     // RPL_WHOREPLY (352): "<channel> <user> <host> <server> <nick> <H|G>[*][@|+] :<hopcount> <real name>"
                     // H = here, G = gone (away)
                     // * = IRC operator
                     // @ = channel operator, + = voiced
-                    const flags = 'H'; // Always "here" for now
+                    let flags = member.isAway() ? 'G' : 'H';
+
+                    // Add channel status
+                    if (channel.isOperator(member)) {
+                        flags += '@';
+                    } else if (channel.hasVoice(member)) {
+                        flags += '+';
+                    }
+
                     this.sendReply(
                         connection,
                         '352',
-                        `${mask} ${member.username || '~user'} ${member.hostname} ${this.serverName} ${member.nickname} ${flags} :0 ${member.realname || 'Unknown'}`
+                        `${mask} ${member.getUsername()} ${member.getHostname()} ${this.serverName} ${member.getNickname()} ${flags} :0 ${member.getRealname()}`
                     );
                 }
             }
@@ -49,20 +63,18 @@ export class WhoCommand extends BaseIrcCommand {
             this.sendReply(connection, '315', `${mask} :End of WHO list`);
         } else {
             // WHO for specific user
-            const targetConnection = this.server.getConnectionByNickname(mask);
+            const targetUser = tenant.getUserByNickname(mask);
 
-            // Only show users from same tenant (tenant isolation)
-            if (targetConnection && targetConnection.nickname && targetConnection.tenant === connection.tenant) {
-                const flags = 'H';
+            if (targetUser) {
+                const flags = targetUser.isAway() ? 'G' : 'H';
                 // Find what channels they're in (optional, show first one or *)
-                const channel = targetConnection.channels.size > 0 
-                    ? Array.from(targetConnection.channels)[0] 
-                    : '*';
-                
+                const channels = targetUser.getChannelNames();
+                const channel = channels.length > 0 ? channels[0] : '*';
+
                 this.sendReply(
                     connection,
                     '352',
-                    `${channel} ${targetConnection.username || '~user'} ${targetConnection.hostname} ${this.serverName} ${targetConnection.nickname} ${flags} :0 ${targetConnection.realname || 'Unknown'}`
+                    `${channel} ${targetUser.getUsername()} ${targetUser.getHostname()} ${this.serverName} ${targetUser.getNickname()} ${flags} :0 ${targetUser.getRealname()}`
                 );
             }
 
