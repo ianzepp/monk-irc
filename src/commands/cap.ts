@@ -7,7 +7,7 @@
  * - CAP REQ :cap1 cap2 - Request capabilities
  * - CAP END - End negotiation and resume registration
  *
- * The 'tenant-aware' capability enables bot service features:
+ * The 'tenant-aware' capability enables tenant-scoped messaging:
  * - Receives TENANTS, TENANTJOIN, TENANTPART notifications
  * - Messages forwarded with #channel@tenant format
  * - Can send NOTICE with #channel@tenant routing
@@ -127,7 +127,10 @@ export class CapCommand extends BaseIrcCommand {
 
         // Check for tenant-aware capability
         if (requestedCaps.includes('tenant-aware')) {
-            connection.isBotService = true;
+            connection.isTenantAware = true;
+
+            // Register as tenant-aware connection
+            this.server.addTenantAwareConnection(connection);
 
             if (this.debug) {
                 console.log(`🤖 [${connection.id}] Tenant-aware capability enabled`);

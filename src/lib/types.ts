@@ -40,7 +40,7 @@ export interface IrcConnection {
     // CAP Negotiation (IRCv3)
     capNegotiating: boolean;           // true during CAP negotiation, blocks registration
     capabilities: Set<string>;         // enabled capabilities (e.g., 'tenant-aware')
-    isBotService: boolean;             // true if tenant-aware capability enabled
+    isTenantAware: boolean;            // true if tenant-aware capability enabled
 }
 
 export interface IrcCommandHandler {
@@ -98,8 +98,8 @@ export const IRC_REPLIES = {
     // VERSION reply
     RPL_VERSION: '351',           // Server version
 
-    // Bot service commands (custom, not standard IRC numerics)
-    TENANTS: 'TENANTS',           // Initial tenant list for bot service
+    // Tenant-aware commands (custom, not standard IRC numerics)
+    TENANTS: 'TENANTS',           // Initial tenant list for tenant-aware connections
     TENANTJOIN: 'TENANTJOIN',     // New tenant connected (first user)
     TENANTPART: 'TENANTPART',     // Tenant disconnected (last user)
 

@@ -17,6 +17,7 @@ export class IrcServer {
     private nicknameToConnection = new Map<string, IrcConnection>();
     private tenants = new Map<string, Tenant>();
     private commandHandlers = new Map<string, IrcCommandHandler>();
+    private tenantAwareConnections = new Set<IrcConnection>();
 
     constructor(private config: ServerConfig) {
         this.server = net.createServer(this.handleConnection.bind(this));
@@ -130,7 +131,7 @@ export class IrcServer {
             lineBuffer: '',
             capNegotiating: false,
             capabilities: new Set(),
-            isBotService: false
+            isTenantAware: false
         };
 
         this.connections.set(connection.id, connection);
@@ -239,14 +240,26 @@ export class IrcServer {
         // Remove from tenant
         if (connection.tenant) {
             const tenant = this.getTenant(connection.tenant);
+            const isLastConnection = tenant.getConnectionCount() === 1;
+
             tenant.removeConnection(connection);
 
             if (this.config.debug) {
                 console.log(`🏢 [${connection.tenant}] Connection removed from tenant`);
             }
+
+            // Notify tenant-aware connections if this was the last user in the tenant
+            if (isLastConnection) {
+                this.notifyTenantPart(connection.tenant);
+            }
         }
 
         // Pure bridge - no database cleanup needed (in-memory only)
+
+        // Remove from tenant-aware connections if applicable
+        if (connection.isTenantAware) {
+            this.removeTenantAwareConnection(connection);
+        }
 
         // Remove from nickname mapping
         if (connection.nickname) {
@@ -396,6 +409,56 @@ export class IrcServer {
         }
 
         return tenant.getActiveChannels();
+    }
+
+    // Tenant-aware connection management
+
+    public addTenantAwareConnection(connection: IrcConnection): void {
+        this.tenantAwareConnections.add(connection);
+
+        if (this.config.debug) {
+            console.log(`🤖 [${connection.id}] Added to tenant-aware connections`);
+        }
+    }
+
+    public removeTenantAwareConnection(connection: IrcConnection): void {
+        this.tenantAwareConnections.delete(connection);
+
+        if (this.config.debug) {
+            console.log(`🤖 [${connection.id}] Removed from tenant-aware connections`);
+        }
+    }
+
+    public getTenantAwareConnections(): IrcConnection[] {
+        return Array.from(this.tenantAwareConnections);
+    }
+
+    /**
+     * Notify all tenant-aware connections when a tenant's first user connects
+     */
+    public notifyTenantJoin(tenantName: string): void {
+        for (const tenantAwareConn of this.tenantAwareConnections) {
+            const nick = tenantAwareConn.nickname || '*';
+            tenantAwareConn.socket.write(`:${this.config.serverName} ${IRC_REPLIES.TENANTJOIN} ${nick} :${tenantName}\r\n`);
+        }
+
+        if (this.config.debug && this.tenantAwareConnections.size > 0) {
+            console.log(`🤖 Sent TENANTJOIN for ${tenantName} to ${this.tenantAwareConnections.size} tenant-aware connections`);
+        }
+    }
+
+    /**
+     * Notify all tenant-aware connections when a tenant's last user disconnects
+     */
+    public notifyTenantPart(tenantName: string): void {
+        for (const tenantAwareConn of this.tenantAwareConnections) {
+            const nick = tenantAwareConn.nickname || '*';
+            tenantAwareConn.socket.write(`:${this.config.serverName} ${IRC_REPLIES.TENANTPART} ${nick} :${tenantName}\r\n`);
+        }
+
+        if (this.config.debug && this.tenantAwareConnections.size > 0) {
+            console.log(`🤖 Sent TENANTPART for ${tenantName} to ${this.tenantAwareConnections.size} tenant-aware connections`);
+        }
     }
 
     // Admin/monitoring methods

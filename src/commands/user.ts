@@ -128,10 +128,17 @@ export class UserCommand extends BaseIrcCommand {
 
         // Register connection with tenant
         const tenant = this.server.getTenant(connection.tenant);
+        const isFirstConnection = tenant.getConnectionCount() === 0;
+
         tenant.addConnection(connection);
 
         if (this.debug) {
             console.log(`🏢 [${connection.id}] Registered with tenant: ${connection.tenant}`);
+        }
+
+        // Notify tenant-aware connections if this is the first user in the tenant
+        if (isFirstConnection) {
+            this.server.notifyTenantJoin(connection.tenant);
         }
     }
 
